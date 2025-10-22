@@ -9,7 +9,8 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/DeviceOrientationControls.js"></script>
     <style>
-         * {
+        /* جميع الأنماط السابقة تبقى كما هي */
+        * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
@@ -1195,6 +1196,13 @@
             durationDisplay.textContent = formatTime(videoPlayer.duration);
             timeDisplayAdv.textContent = `00:00 / ${formatTime(videoPlayer.duration)}`;
             initThreeJS();
+            
+            // إصلاح: تفعيل الجايروسكوب مباشرة بعد تحميل الفيديو
+            setTimeout(() => {
+                if (!isGyroEnabled && !isVRMode) {
+                    enableGyro();
+                }
+            }, 1000);
         });
 
         videoPlayer.addEventListener('waiting', function() {
@@ -1238,8 +1246,20 @@
             timeDisplayAdv.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
         }
 
-        // النقر على شريط التقدم
+        // إصلاح شريط التقدم - إضافة دعم اللمس بشكل أفضل
         progressContainer.addEventListener('click', setProgress);
+        progressContainer.addEventListener('touchstart', handleTouchProgress);
+        progressContainer.addEventListener('touchmove', handleTouchProgress);
+
+        let isDragging = false;
+        
+        function handleTouchProgress(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = progressContainer.getBoundingClientRect();
+            const percent = (touch.clientX - rect.left) / rect.width;
+            videoPlayer.currentTime = percent * videoPlayer.duration;
+        }
 
         function setProgress(e) {
             const rect = progressContainer.getBoundingClientRect();
@@ -1247,10 +1267,42 @@
             videoPlayer.currentTime = percent * videoPlayer.duration;
         }
 
+        // إضافة دعم السحب لشريط التقدم
+        progressContainer.addEventListener('mousedown', startDrag);
+        document.addEventListener('mousemove', duringDrag);
+        document.addEventListener('mouseup', stopDrag);
+
+        function startDrag(e) {
+            isDragging = true;
+            setProgress(e);
+        }
+
+        function duringDrag(e) {
+            if (isDragging) {
+                setProgress(e);
+            }
+        }
+
+        function stopDrag() {
+            isDragging = false;
+        }
+
         // التحكم في الصوت
         volumeSlider.addEventListener('click', setVolume);
+        volumeSlider.addEventListener('touchstart', handleTouchVolume);
+        volumeSlider.addEventListener('touchmove', handleTouchVolume);
+
+        function handleTouchVolume(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            setVolumeFromEvent(touch);
+        }
 
         function setVolume(e) {
+            setVolumeFromEvent(e);
+        }
+
+        function setVolumeFromEvent(e) {
             const rect = volumeSlider.getBoundingClientRect();
             let percent = (e.clientX - rect.left) / rect.width;
             percent = Math.max(0, Math.min(1, percent));
@@ -1311,6 +1363,17 @@
             }
         }
 
+        // إصلاح: تحسين ظهور زر VR على الهواتف
+        function updateVRButtonVisibility() {
+            if (window.innerWidth <= 480) {
+                vrButton.style.display = 'flex';
+                vrButton.style.alignItems = 'center';
+                vrButton.style.justifyContent = 'center';
+            } else {
+                vrButton.style.display = 'flex';
+            }
+        }
+
         // وضع VR
         vrButton.addEventListener('click', toggleVRMode);
         vrExitBtn.addEventListener('click', toggleVRMode);
@@ -1335,6 +1398,9 @@
             // إخفاء التعليمات في وضع VR
             instructions.style.display = 'none';
             controls.style.display = 'none';
+            
+            // إصلاح: إخفاء زر التحكم المتقدم في وضع VR
+            advancedToggle.style.display = 'none';
         }
 
         function disableVRMode() {
@@ -1356,6 +1422,9 @@
             // إظهار التعليمات والتحكم
             instructions.style.display = 'block';
             controls.style.display = 'block';
+            
+            // إصلاح: إظهار زر التحكم المتقدم
+            advancedToggle.style.display = 'flex';
             
             // إيقاف الجايروسكوب
             disableGyro();
@@ -1503,6 +1572,9 @@
                     renderer.setSize(window.innerWidth, window.innerHeight);
                 }
             }
+            
+            // إصلاح: تحديث ظهور زر VR
+            updateVRButtonVisibility();
         });
 
         // إخفاء عناصر التحكم تلقائياً
@@ -1541,6 +1613,9 @@
         volumeLevel.style.width = `${videoPlayer.volume * 100}%`;
         updateVolumeIcon(videoPlayer.volume);
         
+        // إصلاح: تحديث ظهور زر VR عند التحميل
+        updateVRButtonVisibility();
+        
         // بدء تشغيل الفيديو تلقائياً عند التحميل
         videoPlayer.addEventListener('canplay', function() {
             videoPlayer.play().then(() => {
@@ -1550,6 +1625,15 @@
             }).catch(e => {
                 console.log("التشغيل التلقائي غير مسموح: ", e);
             });
+        });
+
+        // إصلاح: تفعيل الجايروسكوب عند تحميل الصفحة
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                if (!isGyroEnabled && !isVRMode) {
+                    enableGyro();
+                }
+            }, 2000);
         });
 
         // معالجة أخطاء Three.js
