@@ -9,7 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/DeviceOrientationControls.js"></script>
     <style>
-        /* جميع الأنماط السابقة تبقى كما هي */
+        /* جميع الأنماط تبقى كما هي بدون تغيير */
         * {
             margin: 0;
             padding: 0;
@@ -690,8 +690,7 @@
         <div id="videoContainer">
             <video id="videoPlayer" crossorigin="anonymous" loop>
                 <!-- تم استخدام سيرفر وسيط لتجاوز مشكلة CORS -->
-         <source src="https://pixeldrain.com/api/file/Ve2iAF6E" type="video/mp4">
-                  
+                <source src="https://pixeldrain.com/api/file/Ve2iAF6E" type="video/mp4">
             </video>
             <div id="canvasContainer"></div>
             <div class="vr-overlay">
@@ -908,6 +907,111 @@
         let isInverted = false;
         let playbackRate = 1.0;
 
+        // إصلاح 1: تحسين شريط التقدم
+        function setupProgressBar() {
+            // النقر على شريط التقدم
+            progressContainer.addEventListener('click', setProgress);
+            
+            // السحب على شريط التقدم
+            let isDragging = false;
+            
+            progressContainer.addEventListener('mousedown', startDrag);
+            progressContainer.addEventListener('touchstart', startDrag);
+            
+            document.addEventListener('mousemove', duringDrag);
+            document.addEventListener('touchmove', duringDrag);
+            
+            document.addEventListener('mouseup', stopDrag);
+            document.addEventListener('touchend', stopDrag);
+            
+            function startDrag(e) {
+                isDragging = true;
+                setProgress(e);
+            }
+            
+            function duringDrag(e) {
+                if (isDragging) {
+                    setProgress(e);
+                }
+            }
+            
+            function stopDrag() {
+                isDragging = false;
+            }
+            
+            function setProgress(e) {
+                const rect = progressContainer.getBoundingClientRect();
+                let clientX;
+                
+                if (e.type.includes('touch')) {
+                    clientX = e.touches[0].clientX;
+                } else {
+                    clientX = e.clientX;
+                }
+                
+                const percent = (clientX - rect.left) / rect.width;
+                const newTime = percent * videoPlayer.duration;
+                
+                if (!isNaN(newTime) && isFinite(newTime)) {
+                    videoPlayer.currentTime = Math.max(0, Math.min(videoPlayer.duration, newTime));
+                }
+            }
+        }
+
+        // إصلاح 2: تحسين ظهور زر VR على الهواتف
+        function fixVRButton() {
+            // تأكد من ظهور زر VR على جميع الأجهزة
+            vrButton.style.display = 'flex';
+            vrButton.style.alignItems = 'center';
+            vrButton.style.justifyContent = 'center';
+            
+            // تحسين التخطيط على الشاشات الصغيرة
+            if (window.innerWidth <= 480) {
+                vrButton.style.padding = '10px 15px';
+                vrButton.style.fontSize = '0.8rem';
+            }
+        }
+
+        // إصلاح 3: تحسين الجيروسكوب
+        function setupGyroscope() {
+            if (typeof DeviceOrientationEvent !== 'undefined') {
+                // طلب الإذن تلقائياً
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // على iOS، نطلب الإذن عند النقر على الزر
+                    document.addEventListener('click', function initialGyroRequest() {
+                        if (!orientationRequested) {
+                            DeviceOrientationEvent.requestPermission()
+                                .then(permissionState => {
+                                    if (permissionState === 'granted') {
+                                        orientationRequested = true;
+                                        initDeviceOrientationControls();
+                                        console.log("Gyroscope permission granted");
+                                    }
+                                })
+                                .catch(console.error);
+                        }
+                        document.removeEventListener('click', initialGyroRequest);
+                    });
+                } else {
+                    // المتصفحات الأخرى
+                    initDeviceOrientationControls();
+                }
+            }
+        }
+
+        function initDeviceOrientationControls() {
+            try {
+                if (camera && !deviceOrientationControls) {
+                    deviceOrientationControls = new THREE.DeviceOrientationControls(camera);
+                    isGyroEnabled = true;
+                    if (controls3D) controls3D.enabled = false;
+                    console.log("Gyroscope controls initialized");
+                }
+            } catch (error) {
+                console.error("Error initializing gyroscope:", error);
+            }
+        }
+
         // تهيئة Three.js لمشهد 360
         function initThreeJS() {
             try {
@@ -951,11 +1055,6 @@
                 controls3D.enableZoom = false;
                 controls3D.enablePan = false;
                 controls3D.rotateSpeed = -0.25;
-                
-                // تهيئة تحكم الجايروسكوب
-                if (window.DeviceOrientationEvent) {
-                    deviceOrientationControls = new THREE.DeviceOrientationControls(camera);
-                }
                 
                 console.log("Three.js initialized successfully");
                 
@@ -1037,7 +1136,7 @@
                 vrControls.style.display = 'flex';
                 
                 // تفعيل الجايروسكوب
-                enableGyro();
+                setupGyroscope();
                 
                 console.log("VR mode initialized successfully");
             } catch (error) {
@@ -1125,69 +1224,11 @@
             }
         }
 
-        // تفعيل الجايروسكوب
-        function enableGyro() {
-            if (typeof DeviceOrientationEvent !== 'undefined') {
-                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    // طلب الإذن على iOS
-                    if (!orientationRequested) {
-                        showGyroPermissionDialog();
-                    } else {
-                        initDeviceOrientationControls();
-                    }
-                } else {
-                    // المتصفحات الأخرى
-                    initDeviceOrientationControls();
-                }
-            } else {
-                console.log("DeviceOrientationEvent not supported");
-            }
-        }
-
-        function initDeviceOrientationControls() {
-            try {
-                deviceOrientationControls = new THREE.DeviceOrientationControls(camera);
-                isGyroEnabled = true;
-                if (controls3D) controls3D.enabled = false;
-                console.log("Gyroscope enabled");
-            } catch (error) {
-                console.error("Error enabling gyroscope:", error);
-            }
-        }
-
         // إيقاف الجايروسكوب
         function disableGyro() {
             isGyroEnabled = false;
             if (controls3D) controls3D.enabled = true;
             deviceOrientationControls = null;
-        }
-
-        // عرض طلب إذن الجايروسكوب
-        function showGyroPermissionDialog() {
-            const dialog = document.createElement('div');
-            dialog.className = 'gyro-permission';
-            dialog.innerHTML = `
-                <h3>تفعيل الجايروسكوب</h3>
-                <p>للاستمتاع بتجربة VR كاملة، نحتاج إلى الوصول إلى مستشعر الجايروسكوب في جهازك.</p>
-                <p>سيؤدي هذا إلى تحسين تجربة المشاهدة في وضع VR.</p>
-                <button id="enableGyroBtn">تفعيل الجايروسكوب</button>
-            `;
-            document.body.appendChild(dialog);
-            
-            document.getElementById('enableGyroBtn').addEventListener('click', function() {
-                DeviceOrientationEvent.requestPermission()
-                    .then(permissionState => {
-                        if (permissionState === 'granted') {
-                            orientationRequested = true;
-                            initDeviceOrientationControls();
-                        }
-                        document.body.removeChild(dialog);
-                    })
-                    .catch(error => {
-                        console.error("Error requesting gyroscope permission:", error);
-                        document.body.removeChild(dialog);
-                    });
-            });
         }
         
         // تهيئة الفيديو
@@ -1197,12 +1238,14 @@
             timeDisplayAdv.textContent = `00:00 / ${formatTime(videoPlayer.duration)}`;
             initThreeJS();
             
-            // إصلاح: تفعيل الجايروسكوب مباشرة بعد تحميل الفيديو
-            setTimeout(() => {
-                if (!isGyroEnabled && !isVRMode) {
-                    enableGyro();
-                }
-            }, 1000);
+            // إعداد شريط التقدم
+            setupProgressBar();
+            
+            // إصلاح زر VR
+            fixVRButton();
+            
+            // إعداد الجيروسكوب
+            setupGyroscope();
         });
 
         videoPlayer.addEventListener('waiting', function() {
@@ -1240,69 +1283,18 @@
         videoPlayer.addEventListener('timeupdate', updateProgress);
 
         function updateProgress() {
-            const percent = (videoPlayer.currentTime / videoPlayer.duration) * 100;
-            progressBar.style.width = `${percent}%`;
-            currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
-            timeDisplayAdv.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
-        }
-
-        // إصلاح شريط التقدم - إضافة دعم اللمس بشكل أفضل
-        progressContainer.addEventListener('click', setProgress);
-        progressContainer.addEventListener('touchstart', handleTouchProgress);
-        progressContainer.addEventListener('touchmove', handleTouchProgress);
-
-        let isDragging = false;
-        
-        function handleTouchProgress(e) {
-            e.preventDefault();
-            const touch = e.touches[0];
-            const rect = progressContainer.getBoundingClientRect();
-            const percent = (touch.clientX - rect.left) / rect.width;
-            videoPlayer.currentTime = percent * videoPlayer.duration;
-        }
-
-        function setProgress(e) {
-            const rect = progressContainer.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
-            videoPlayer.currentTime = percent * videoPlayer.duration;
-        }
-
-        // إضافة دعم السحب لشريط التقدم
-        progressContainer.addEventListener('mousedown', startDrag);
-        document.addEventListener('mousemove', duringDrag);
-        document.addEventListener('mouseup', stopDrag);
-
-        function startDrag(e) {
-            isDragging = true;
-            setProgress(e);
-        }
-
-        function duringDrag(e) {
-            if (isDragging) {
-                setProgress(e);
+            if (videoPlayer.duration) {
+                const percent = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+                progressBar.style.width = `${percent}%`;
+                currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
+                timeDisplayAdv.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
             }
-        }
-
-        function stopDrag() {
-            isDragging = false;
         }
 
         // التحكم في الصوت
         volumeSlider.addEventListener('click', setVolume);
-        volumeSlider.addEventListener('touchstart', handleTouchVolume);
-        volumeSlider.addEventListener('touchmove', handleTouchVolume);
-
-        function handleTouchVolume(e) {
-            e.preventDefault();
-            const touch = e.touches[0];
-            setVolumeFromEvent(touch);
-        }
 
         function setVolume(e) {
-            setVolumeFromEvent(e);
-        }
-
-        function setVolumeFromEvent(e) {
             const rect = volumeSlider.getBoundingClientRect();
             let percent = (e.clientX - rect.left) / rect.width;
             percent = Math.max(0, Math.min(1, percent));
@@ -1363,17 +1355,6 @@
             }
         }
 
-        // إصلاح: تحسين ظهور زر VR على الهواتف
-        function updateVRButtonVisibility() {
-            if (window.innerWidth <= 480) {
-                vrButton.style.display = 'flex';
-                vrButton.style.alignItems = 'center';
-                vrButton.style.justifyContent = 'center';
-            } else {
-                vrButton.style.display = 'flex';
-            }
-        }
-
         // وضع VR
         vrButton.addEventListener('click', toggleVRMode);
         vrExitBtn.addEventListener('click', toggleVRMode);
@@ -1398,9 +1379,6 @@
             // إخفاء التعليمات في وضع VR
             instructions.style.display = 'none';
             controls.style.display = 'none';
-            
-            // إصلاح: إخفاء زر التحكم المتقدم في وضع VR
-            advancedToggle.style.display = 'none';
         }
 
         function disableVRMode() {
@@ -1422,9 +1400,6 @@
             // إظهار التعليمات والتحكم
             instructions.style.display = 'block';
             controls.style.display = 'block';
-            
-            // إصلاح: إظهار زر التحكم المتقدم
-            advancedToggle.style.display = 'flex';
             
             // إيقاف الجايروسكوب
             disableGyro();
@@ -1572,9 +1547,6 @@
                     renderer.setSize(window.innerWidth, window.innerHeight);
                 }
             }
-            
-            // إصلاح: تحديث ظهور زر VR
-            updateVRButtonVisibility();
         });
 
         // إخفاء عناصر التحكم تلقائياً
@@ -1613,9 +1585,6 @@
         volumeLevel.style.width = `${videoPlayer.volume * 100}%`;
         updateVolumeIcon(videoPlayer.volume);
         
-        // إصلاح: تحديث ظهور زر VR عند التحميل
-        updateVRButtonVisibility();
-        
         // بدء تشغيل الفيديو تلقائياً عند التحميل
         videoPlayer.addEventListener('canplay', function() {
             videoPlayer.play().then(() => {
@@ -1625,15 +1594,6 @@
             }).catch(e => {
                 console.log("التشغيل التلقائي غير مسموح: ", e);
             });
-        });
-
-        // إصلاح: تفعيل الجايروسكوب عند تحميل الصفحة
-        window.addEventListener('load', function() {
-            setTimeout(() => {
-                if (!isGyroEnabled && !isVRMode) {
-                    enableGyro();
-                }
-            }, 2000);
         });
 
         // معالجة أخطاء Three.js
