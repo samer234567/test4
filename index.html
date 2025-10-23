@@ -2,1949 +2,1181 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مشغل فيديو 360 درجة</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>مشغل 360 VR - Professional Edition</title>
+    
+    <!-- Three.js Core -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/DeviceOrientationControls.js"></script>
+    
+    <!-- WebXR Polyfill -->
+    <script src="https://unpkg.com/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
+    
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/DeviceOrientationControls.js"></script>
+    
     <style>
+        /* ========================================
+           VARIABLES & RESET
+        ======================================== */
+        :root {
+            --primary: #ff4757;
+            --primary-dark: #ff3838;
+            --secondary: #5f27cd;
+            --bg: #000000;
+            --panel-bg: rgba(10, 12, 16, 0.95);
+            --glass: rgba(255, 255, 255, 0.05);
+            --glass-strong: rgba(255, 255, 255, 0.1);
+            --text: #ffffff;
+            --text-muted: #a0a0a0;
+            --border: rgba(255, 255, 255, 0.1);
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            --radius: 12px;
+            --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+            --safe-area-top: env(safe-area-inset-top);
+            --safe-area-bottom: env(safe-area-inset-bottom);
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
-            background-color: #000;
-            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Cairo", Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
             overflow: hidden;
+            width: 100vw;
             height: 100vh;
-            display: flex;
-            flex-direction: column;
-            touch-action: pan-x pan-y;
+            position: fixed;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
-        #container {
-            position: relative;
-            flex: 1;
-            width: 100%;
-            overflow: hidden;
-        }
-
-        #videoContainer {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            top: 0;
-            left: 0;
-            background: #000;
-        }
-
-        #videoPlayer {
-            display: none;
-        }
-
-        #canvasContainer {
-            width: 100%;
-            height: 100%;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-
+        /* ========================================
+           LOADING SCREEN
+        ======================================== */
         #loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #fff;
-            font-size: 1.5rem;
-            z-index: 10;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 20px;
-            border-radius: 10px;
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 15px;
-            text-align: center;
+            justify-content: center;
+            z-index: 10000;
+            transition: opacity 0.5s;
+        }
+
+        #loading.hide {
+            opacity: 0;
+            pointer-events: none;
         }
 
         .spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid rgba(255, 255, 255, 0.3);
+            width: 64px;
+            height: 64px;
+            border: 5px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--primary);
             border-radius: 50%;
-            border-top-color: #ff3c00;
-            animation: spin 1s linear infinite;
+            animation: spin 0.8s linear infinite;
         }
 
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
 
-        #controls {
+        .loading-text {
+            margin-top: 20px;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .loading-progress {
+            margin-top: 12px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        /* ========================================
+           MAIN CONTAINER
+        ======================================== */
+        #app {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #viewer {
             position: absolute;
+            inset: 0;
+            background: #000;
+        }
+
+        #video {
+            display: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ========================================
+           TOP BAR
+        ======================================== */
+        #top-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: calc(12px + var(--safe-area-top)) 16px 12px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, transparent 100%);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            transition: transform var(--transition);
+        }
+
+        #top-bar.hidden {
+            transform: translateY(-100%);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--glass);
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .status-badge.vr-active {
+            background: var(--secondary);
+            color: #fff;
+        }
+
+        .network-info {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* ========================================
+           BOTTOM CONTROLS
+        ======================================== */
+        #controls {
+            position: fixed;
             bottom: 0;
             left: 0;
-            width: 100%;
-            background: linear-gradient(transparent, rgba(0, 0, 0, 0.9));
-            padding: 15px 20px;
-            transition: opacity 0.3s, transform 0.3s;
+            right: 0;
+            padding: 16px 16px calc(16px + var(--safe-area-bottom));
+            background: linear-gradient(0deg, rgba(0,0,0,0.95) 0%, transparent 100%);
+            backdrop-filter: blur(10px);
             z-index: 100;
-            transform: translateY(0);
+            transition: transform var(--transition);
         }
 
-        .controls-hidden {
-            opacity: 0 !important;
-            pointer-events: none;
-            transform: translateY(100%) !important;
+        #controls.hidden {
+            transform: translateY(100%);
         }
 
-        #progressContainer {
+        /* Progress Bar */
+        .progress-container {
+            margin-bottom: 12px;
+        }
+
+        .progress-bar-wrapper {
             width: 100%;
-            height: 10px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 5px;
-            margin-bottom: 15px;
+            height: 6px;
+            background: var(--glass);
+            border-radius: 3px;
             cursor: pointer;
             position: relative;
-            touch-action: none;
         }
 
-        #progressBar {
+        .progress-bar {
             height: 100%;
-            background: #ff3c00;
-            border-radius: 5px;
             width: 0%;
-            transition: width 0.1s;
+            background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+            border-radius: 3px;
+            transition: width 0.1s linear;
             position: relative;
         }
 
-        #progressBar::after {
-            content: '';
+        .progress-handle {
             position: absolute;
             right: -8px;
             top: 50%;
             transform: translateY(-50%);
             width: 16px;
             height: 16px;
-            background: #ff3c00;
+            background: #fff;
             border-radius: 50%;
-            opacity: 0;
-            transition: opacity 0.2s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
         }
 
-        #progressContainer:hover #progressBar::after,
-        #progressContainer:active #progressBar::after {
-            opacity: 1;
-        }
-
-        #timeDisplay {
+        .time-display {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 15px;
-            font-size: 0.9rem;
-            color: #ddd;
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
         }
 
-        #mainControls {
-            display: flex;
+        /* Control Buttons */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 12px;
             align-items: center;
-            justify-content: space-between;
         }
 
-        #leftControls, #rightControls {
+        .controls-left,
+        .controls-center,
+        .controls-right {
             display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .control-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
-            color: white;
-            font-size: 1.2rem;
-            cursor: pointer;
-            width: 45px;
-            height: 45px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-
-        .control-btn:hover, .control-btn:active {
-            background: rgba(255, 255, 255, 0.2);
-            transform: scale(1.05);
-        }
-
-        #playPause {
-            font-size: 1.5rem;
-            background: #ff3c00;
-        }
-
-        #playPause:hover, #playPause:active {
-            background: #ff5c2a;
-        }
-
-        #volumeContainer {
-            display: flex;
-            align-items: center;
             gap: 10px;
-        }
-
-        #volumeSlider {
-            width: 80px;
-            height: 5px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 2.5px;
-            position: relative;
-            cursor: pointer;
-        }
-
-        #volumeLevel {
-            height: 100%;
-            background: white;
-            border-radius: 2.5px;
-            width: 100%;
-            transition: width 0.1s;
-        }
-
-        #fullscreenBtn {
-            font-size: 1.2rem;
-        }
-
-        #vrButton {
-            background: #ff3c00;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 25px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
             align-items: center;
-            gap: 8px;
-            box-shadow: 0 2px 8px rgba(255, 60, 0, 0.3);
         }
 
-        #vrButton:hover, #vrButton:active {
-            background: #ff5c2a;
-            transform: scale(1.05);
-        }
-
-        #modeIndicator {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            z-index: 50;
-            backdrop-filter: blur(5px);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        }
-
-        .instructions {
-            position: absolute;
-            bottom: 120px;
-            left: 0;
-            width: 100%;
-            text-align: center;
-            color: #fff;
-            font-size: 0.9rem;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 12px;
-            z-index: 90;
-            transition: opacity 0.3s;
-            backdrop-filter: blur(5px);
-        }
-
-        .gyro-permission {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.8);
-            padding: 25px;
-            border-radius: 15px;
-            text-align: center;
-            z-index: 200;
-            max-width: 80%;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-        }
-
-        .gyro-permission button {
-            background: #ff3c00;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            margin-top: 15px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 1rem;
-            transition: all 0.2s;
-        }
-
-        .gyro-permission button:hover, .gyro-permission button:active {
-            background: #ff5c2a;
-            transform: scale(1.05);
-        }
-
-        /* تحسينات للهواتف */
-        @media (max-width: 768px) {
-            #controls {
-                padding: 12px 15px;
-            }
-            
-            .control-btn {
-                width: 50px;
-                height: 50px;
-                font-size: 1.4rem;
-            }
-            
-            #playPause {
-                font-size: 1.7rem;
-            }
-            
-            #volumeSlider {
-                width: 70px;
-            }
-            
-            #vrButton {
-                padding: 10px 16px;
-                font-size: 0.9rem;
-            }
-            
-            .instructions {
-                font-size: 0.85rem;
-                bottom: 110px;
-                padding: 10px;
-            }
-            
-            #modeIndicator {
-                top: 15px;
-                left: 15px;
-                font-size: 0.85rem;
-                padding: 7px 12px;
-            }
-            
-            #loading {
-                font-size: 1.3rem;
-                padding: 18px;
-            }
-            
-            .spinner {
-                width: 45px;
-                height: 45px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            #leftControls, #rightControls {
-                gap: 10px;
-            }
-            
-            #volumeContainer {
-                display: none;
-            }
-            
-            #modeIndicator {
-                top: 10px;
-                left: 10px;
-                font-size: 0.8rem;
-                padding: 6px 12px;
-            }
-            
-            .control-btn {
-                width: 48px;
-                height: 48px;
-            }
-            
-            #vrButton {
-                padding: 8px 14px;
-                font-size: 0.85rem;
-            }
-            
-            .instructions {
-                font-size: 0.8rem;
-                bottom: 105px;
-            }
-            
-            #progressContainer {
-                height: 8px;
-                margin-bottom: 12px;
-            }
-            
-            #timeDisplay {
-                margin-bottom: 12px;
-                font-size: 0.85rem;
-            }
-        }
-
-        /* تحسينات للشاشات الصغيرة جداً */
-        @media (max-width: 360px) {
-            #vrButton span {
-                display: none;
-            }
-            
-            #vrButton {
-                padding: 10px;
-                width: 50px;
-                height: 50px;
-                border-radius: 50%;
-            }
-            
-            .instructions {
-                font-size: 0.75rem;
-            }
-        }
-
-        /* تحسينات VR */
-        .vr-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 150;
-            pointer-events: none;
-            display: none;
-        }
-
-        .vr-divider {
-            position: absolute;
-            top: 0;
-            left: 50%;
-            width: 2px;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.2);
-            transform: translateX(-50%);
-        }
-
-        .vr-controls {
-            position: absolute;
-            bottom: 20px;
-            left: 0;
-            width: 100%;
-            display: flex;
+        .controls-center {
             justify-content: center;
-            gap: 15px;
-            z-index: 100;
-            display: none;
         }
 
-        .vr-control-btn {
-            background: rgba(0, 0, 0, 0.7);
-            border: none;
-            color: white;
-            width: 55px;
-            height: 55px;
+        .controls-right {
+            justify-content: flex-end;
+        }
+
+        .btn {
+            width: 48px;
+            height: 48px;
             border-radius: 50%;
+            border: none;
+            background: var(--glass);
+            color: var(--text);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
+            font-size: 1.1rem;
             cursor: pointer;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            pointer-events: auto;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            transition: all 0.2s;
+            transition: all var(--transition);
+            backdrop-filter: blur(5px);
         }
 
-        .vr-control-btn:hover, .vr-control-btn:active {
-            background: rgba(0, 0, 0, 0.8);
-            transform: scale(1.05);
+        .btn:active {
+            transform: scale(0.92);
         }
 
-        /* لوحة التحكم المتقدمة */
-        .advanced-controls {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px;
-            border-radius: 10px;
-            z-index: 100;
+        .btn-play {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            font-size: 1.3rem;
+            box-shadow: 0 4px 20px rgba(255, 71, 87, 0.4);
+        }
+
+        .btn-vr {
+            background: linear-gradient(135deg, var(--secondary) 0%, #341f97 100%);
+            box-shadow: 0 4px 20px rgba(95, 39, 205, 0.4);
+        }
+
+        /* ========================================
+           SETTINGS PANEL
+        ======================================== */
+        #settings-btn {
+            position: fixed;
+            top: calc(16px + var(--safe-area-top));
+            left: 16px;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: none;
+            background: var(--glass);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            z-index: 101;
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            display: none;
-            min-width: 280px;
-            max-width: 320px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            max-height: 80vh;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        #settings-btn:active {
+            transform: scale(0.92);
+        }
+
+        #settings-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            max-width: 420px;
+            height: 100%;
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            z-index: 200;
+            transform: translateX(-100%);
+            transition: transform var(--transition);
             overflow-y: auto;
+            padding: calc(20px + var(--safe-area-top)) 20px calc(20px + var(--safe-area-bottom));
         }
 
-        .control-header {
+        #settings-panel.show {
+            transform: translateX(0);
+        }
+
+        #settings-panel::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #settings-panel::-webkit-scrollbar-thumb {
+            background: var(--glass-strong);
+            border-radius: 3px;
+        }
+
+        .settings-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-            padding-bottom: 10px;
+            margin-bottom: 24px;
         }
 
-        .control-header h3 {
-            font-size: 1rem;
-            color: #ff3c00;
-            margin: 0;
+        .settings-header h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
         }
 
         .close-btn {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 1.2rem;
-            cursor: pointer;
-            width: 30px;
-            height: 30px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
+            border: none;
+            background: var(--glass);
+            color: var(--text);
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background 0.2s;
+            cursor: pointer;
         }
 
-        .close-btn:hover, .close-btn:active {
-            background: rgba(255, 255, 255, 0.1);
+        .settings-section {
+            margin-bottom: 28px;
         }
 
-        .control-group {
-            margin-bottom: 15px;
-        }
-
-        .control-group:last-child {
-            margin-bottom: 0;
-        }
-
-        .control-group h4 {
+        .section-title {
             font-size: 0.9rem;
-            margin-bottom: 8px;
-            color: #ff3c00;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            padding-bottom: 5px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+            font-weight: 600;
         }
 
-        .control-row {
+        .setting-item {
+            margin-bottom: 20px;
+        }
+
+        .setting-label {
             display: flex;
-            align-items: center;
             justify-content: space-between;
+            align-items: center;
             margin-bottom: 10px;
+            font-size: 0.95rem;
         }
 
-        .control-label {
-            font-size: 0.8rem;
-            color: #ddd;
-            flex: 1;
-        }
-
-        .control-value {
-            font-size: 0.8rem;
-            color: #ff3c00;
-            min-width: 50px;
+        .setting-value {
+            color: var(--primary);
+            font-weight: 600;
+            min-width: 60px;
             text-align: left;
         }
 
         .slider {
             width: 100%;
-            height: 5px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 2.5px;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--glass);
             outline: none;
-            -webkit-appearance: none; 
-            margin: 5px 0;
+            -webkit-appearance: none;
+            appearance: none;
         }
 
         .slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 15px;
-            height: 15px;
+            appearance: none;
+            width: 18px;
+            height: 18px;
             border-radius: 50%;
-            background: #ff3c00;
+            background: var(--primary);
             cursor: pointer;
+            box-shadow: 0 2px 8px rgba(255, 71, 87, 0.4);
         }
 
-        .toggle-btn {
-            background: rgba(255, 255, 255, 0.1);
+        .slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
             border: none;
-            color: white;
-            padding: 5px 12px;
-            border-radius: 15px;
-            font-size: 0.8rem;
+            box-shadow: 0 2px 8px rgba(255, 71, 87, 0.4);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 52px;
+            height: 28px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
             cursor: pointer;
-            transition: all 0.2s;
-            min-width: 60px;
+            inset: 0;
+            background: var(--glass);
+            border-radius: 28px;
+            transition: 0.3s;
         }
 
-        .toggle-btn.active {
-            background: #ff3c00;
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
         }
 
-        .time-controls {
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--primary);
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        .select {
+            width: 100%;
+            padding: 12px;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.95rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .select option {
+            background: #1a1a1a;
+            color: var(--text);
+        }
+
+        .btn-group {
             display: flex;
-            align-items: center;
             gap: 10px;
-            justify-content: center;
-            margin: 10px 0;
         }
 
-        .time-btn {
-            background: rgba(255, 255, 255, 0.1);
+        .action-btn {
+            flex: 1;
+            padding: 12px;
             border: none;
-            color: white;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            border-radius: 8px;
+            background: var(--glass);
+            color: var(--text);
+            font-size: 0.9rem;
             cursor: pointer;
-            font-size: 0.8rem;
-            transition: all 0.2s;
+            transition: all var(--transition);
         }
 
-        .time-btn:hover, .time-btn:active {
-            background: rgba(255, 255, 255, 0.2);
+        .action-btn:active {
+            transform: scale(0.96);
         }
 
-        #advancedToggle {
+        .action-btn.primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        /* ========================================
+           VR OVERLAY
+        ======================================== */
+        #vr-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 150;
+            display: none;
+        }
+
+        #vr-overlay.show {
+            display: block;
+        }
+
+        .vr-divider {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            border: none;
-            color: white;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 100;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            font-size: 1.2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            transition: all 0.2s;
+            left: 50%;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(-50%);
         }
 
-        #advancedToggle:hover, #advancedToggle:active {
+        .vr-controls-bottom {
+            position: absolute;
+            bottom: calc(24px + var(--safe-area-bottom));
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            pointer-events: auto;
+        }
+
+        .vr-btn-circle {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2);
             background: rgba(0, 0, 0, 0.8);
-            transform: scale(1.05);
-        }
-
-        .reset-btn {
-            background: #ff3c00;
-            border: none;
-            color: white;
-            padding: 10px 15px;
-            border-radius: 8px;
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: all 0.2s;
-            width: 100%;
-            margin-top: 10px;
-        }
-
-        .reset-btn:hover, .reset-btn:active {
-            background: #ff5c2a;
-            transform: scale(1.02);
-        }
-
-        /* تحسينات اللمس */
-        @media (hover: none) {
-            .control-btn:hover, #vrButton:hover, .vr-control-btn:hover, 
-            #advancedToggle:hover, .reset-btn:hover, .gyro-permission button:hover {
-                transform: none;
-            }
-            
-            .control-btn:active, #vrButton:active, .vr-control-btn:active, 
-            #advancedToggle:active, .reset-btn:active, .gyro-permission button:active {
-                transform: scale(0.95);
-            }
-        }
-
-        /* أنماط جديدة للتحكم بالدقة */
-        .quality-selector {
-            width: 100%;
-            padding: 8px 12px;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
-            font-size: 0.8rem;
-            cursor: pointer;
-            margin-top: 5px;
-        }
-        
-        .quality-selector option {
-            background: #333;
-            color: white;
-        }
-        
-        .quality-indicator {
-            display: inline-block;
-            padding: 2px 6px;
-            background: rgba(255, 60, 0, 0.3);
-            border-radius: 4px;
-            font-size: 0.7rem;
-            margin-right: 5px;
-        }
-        
-        .auto-quality {
-            background: rgba(0, 150, 255, 0.3);
-        }
-        
-        #quickQualityMenu {
-            position: absolute;
-            bottom: 70px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.9);
-            border-radius: 8px;
-            padding: 10px;
-            z-index: 1000;
-            min-width: 150px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        
-        .quality-option {
-            padding: 8px 12px;
-            cursor: pointer;
-            border-radius: 4px;
-            margin: 2px 0;
-            font-size: 0.8rem;
+            color: var(--text);
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
         }
-        
+
+        .vr-btn-circle:active {
+            transform: scale(0.92);
+        }
+
+        /* ========================================
+           QUALITY SELECTOR
+        ======================================== */
+        #quality-selector {
+            position: fixed;
+            bottom: calc(140px + var(--safe-area-bottom));
+            right: 16px;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            padding: 8px;
+            z-index: 150;
+            backdrop-filter: blur(20px);
+            box-shadow: var(--shadow);
+            transform: translateY(10px);
+            opacity: 0;
+            visibility: hidden;
+            transition: all var(--transition);
+        }
+
+        #quality-selector.show {
+            transform: translateY(0);
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .quality-option {
+            padding: 12px 20px;
+            border: none;
+            background: transparent;
+            color: var(--text);
+            text-align: right;
+            width: 100%;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            transition: background var(--transition);
+        }
+
         .quality-option:hover {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--glass);
         }
-        
+
         .quality-option.active {
-            background: rgba(255, 60, 0, 0.3);
+            background: var(--primary);
+            color: #fff;
+        }
+
+        /* ========================================
+           NOTIFICATIONS
+        ======================================== */
+        #notification {
+            position: fixed;
+            top: calc(80px + var(--safe-area-top));
+            left: 50%;
+            transform: translateX(-50%) translateY(-20px);
+            background: var(--panel-bg);
+            padding: 14px 20px;
+            border-radius: 10px;
+            z-index: 300;
+            backdrop-filter: blur(20px);
+            box-shadow: var(--shadow);
+            opacity: 0;
+            visibility: hidden;
+            transition: all var(--transition);
+            max-width: 90%;
+        }
+
+        #notification.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* ========================================
+           GYROSCOPE PERMISSION DIALOG
+        ======================================== */
+        #gyro-dialog {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 500;
+            padding: 20px;
+            opacity: 0;
+            visibility: hidden;
+            transition: all var(--transition);
+        }
+
+        #gyro-dialog.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .gyro-content {
+            background: var(--panel-bg);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 400px;
+            width: 100%;
+            backdrop-filter: blur(20px);
+        }
+
+        .gyro-content h3 {
+            font-size: 1.3rem;
+            margin-bottom: 12px;
+            color: var(--primary);
+        }
+
+        .gyro-content p {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .gyro-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .gyro-btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .gyro-btn.accept {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .gyro-btn.decline {
+            background: var(--glass);
+            color: var(--text);
+        }
+
+        .gyro-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* ========================================
+           RESPONSIVE
+        ======================================== */
+        @media (max-width: 768px) {
+            #settings-panel {
+                max-width: 100%;
+            }
+
+            .controls-grid {
+                gap: 8px;
+            }
+
+            .btn {
+                width: 44px;
+                height: 44px;
+                font-size: 1rem;
+            }
+
+            .btn-play {
+                width: 52px;
+                height: 52px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .btn {
+                width: 42px;
+                height: 42px;
+                font-size: 0.95rem;
+            }
+
+            .btn-play {
+                width: 50px;
+                height: 50px;
+                font-size: 1.2rem;
+            }
+
+            .progress-bar-wrapper {
+                height: 5px;
+            }
+
+            .setting-label {
+                font-size: 0.9rem;
+            }
+        }
+
+        /* ========================================
+           ACCESSIBILITY
+        ======================================== */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
 <body>
-    <div id="container">
-        <div id="loading">
-            <div class="spinner"></div>
-            <div>جاري تحميل الفيديو...</div>
+    <!-- Loading Screen -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text">جاري تحميل المشغل...</div>
+        <div class="loading-progress" id="loading-progress"></div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app">
+        <!-- Video Element -->
+        <video 
+            id="video" 
+            crossorigin="anonymous" 
+            playsinline 
+            webkit-playsinline 
+            preload="metadata"
+            loop
+            muted
+        ></video>
+
+        <!-- Viewer -->
+        <div id="viewer">
+            <div id="canvas-container"></div>
         </div>
-        
-        <div id="videoContainer">
-            <video id="videoPlayer" crossorigin="anonymous" loop>
-                <!-- تم استخدام سيرفر وسيط لتجاوز مشكلة CORS -->
-                <source src="https://pixeldrain.com/api/file/Ve2iAF6E" type="video/mp4">
-            </video>
-            <div id="canvasContainer"></div>
-            <div class="vr-overlay">
-                <div class="vr-divider"></div>
-                <div class="vr-controls">
-                    <button class="vr-control-btn" id="vrPlayPause">
-                        <i class="fas fa-pause"></i>
-                    </button>
-                    <button class="vr-control-btn" id="vrExit">
-                        <i class="fas fa-times"></i>
-                    </button>
-                    <button class="vr-control-btn" id="vrResetView">
-                        <i class="fas fa-crosshairs"></i>
-                    </button>
+
+        <!-- Top Bar -->
+        <div id="top-bar">
+            <div class="status-badge" id="mode-badge">
+                <i class="fas fa-desktop"></i>
+                <span>عرض عادي</span>
+            </div>
+            <div class="network-info" id="network-info">
+                <i class="fas fa-wifi"></i>
+                <span id="network-speed">--</span>
+            </div>
+        </div>
+
+        <!-- Settings Button -->
+        <button id="settings-btn" aria-label="الإعدادات">
+            <i class="fas fa-sliders-h"></i>
+        </button>
+
+        <!-- Bottom Controls -->
+        <div id="controls">
+            <!-- Progress Bar -->
+            <div class="progress-container">
+                <div class="progress-bar-wrapper" id="progress-wrapper">
+                    <div class="progress-bar" id="progress-bar">
+                        <div class="progress-handle"></div>
+                    </div>
+                </div>
+                <div class="time-display">
+                    <span id="current-time">00:00</span>
+                    <span id="duration">00:00</span>
                 </div>
             </div>
-        </div>
- 
-        <div id="modeIndicator">
-            <i class="fas fa-vr-cardboard"></i>
-            <span>وضع العرض: عادي</span>
-        </div>
-        
-        <div class="instructions">
-            على الكمبيوتر: اسحب بالماوس للتحريك | على الهاتف: حرك جهازك للتحريك
-        </div>
-        
-        <div id="controls">
-            <div id="progressContainer">
-                <div id="progressBar"></div>
-            </div>
-            <div id="timeDisplay">
-                <span id="currentTime">00:00</span>
-                <span id="duration">00:00</span>
-            </div>
-            <div id="mainControls">
-                <div id="leftControls">
-                    <button id="playPause" class="control-btn">
+
+            <!-- Control Buttons -->
+            <div class="controls-grid">
+                <div class="controls-left">
+                    <button class="btn" id="volume-btn" aria-label="الصوت">
+                        <i class="fas fa-volume-up"></i>
+                    </button>
+                    <button class="btn" id="quality-btn" aria-label="الجودة">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+
+                <div class="controls-center">
+                    <button class="btn" id="backward-btn" aria-label="رجوع 10 ثواني">
+                        <i class="fas fa-backward"></i>
+                    </button>
+                    <button class="btn btn-play" id="play-btn" aria-label="تشغيل">
                         <i class="fas fa-play"></i>
                     </button>
-                    <div id="volumeContainer">
-                        <button id="volumeBtn" class="control-btn">
-                            <i class="fas fa-volume-up"></i>
-                        </button>
-                        <div id="volumeSlider">
-                            <div id="volumeLevel"></div>
-                        </div>
-                    </div>
-                    <button id="qualityToggle" class="control-btn" title="تبديل الجودة">
-                        <i class="fas fa-tachometer-alt"></i>
+                    <button class="btn" id="forward-btn" aria-label="تقديم 10 ثواني">
+                        <i class="fas fa-forward"></i>
                     </button>
                 </div>
-                <div id="rightControls">
-                    <button id="vrButton">
+
+                <div class="controls-right">
+                    <button class="btn btn-vr" id="vr-btn" aria-label="وضع VR">
                         <i class="fas fa-vr-cardboard"></i>
-                        <span>وضع VR</span>
                     </button>
-                    <button id="fullscreenBtn" class="control-btn">
+                    <button class="btn" id="fullscreen-btn" aria-label="ملء الشاشة">
                         <i class="fas fa-expand"></i>
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- زر التحكم المتقدم -->
-        <button id="advancedToggle">
-            <i class="fas fa-sliders-h"></i>
-        </button>
-
-        <!-- لوحة التحكم المتقدمة -->
-        <div class="advanced-controls" id="advancedControls">
-            <div class="control-header">
-                <h3>الإعدادات المتقدمة</h3>
-                <button class="close-btn" id="closeAdvanced">
+        <!-- Settings Panel -->
+        <aside id="settings-panel">
+            <div class="settings-header">
+                <h2>الإعدادات</h2>
+                <button class="close-btn" id="close-settings">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
 
-            <div class="control-group">
-                <h4>إعدادات الفيديو</h4>
-                <div class="control-row">
-                    <span class="control-label">الجودة:</span>
-                    <button class="toggle-btn active" id="qualityBtn">HD</button>
-                </div>
-                <div class="control-row">
-                    <span class="control-label">جودة الفيديو:</span>
-                    <span class="control-value" id="currentQualityValue">
-                        <span class="quality-indicator auto-quality">تلقائي</span>
-                    </span>
-                </div>
-                <select class="quality-selector" id="qualitySelector">
-                    <option value="auto">تلقائي</option>
-                    <option value="144p">144p (100 Kbps)</option>
-                    <option value="240p">240p (250 Kbps)</option>
-                    <option value="360p">360p (500 Kbps)</option>
-                    <option value="480p">480p (800 Kbps)</option>
-                    <option value="720p">720p (HD) (1.5 Mbps)</option>
-                    <option value="1080p">1080p (Full HD) (3 Mbps)</option>
-                    <option value="1440p">1440p (2K) (6 Mbps)</option>
-                    <option value="2160p">2160p (4K) (12 Mbps)</option>
-                </select>
-                <div class="control-row">
-                    <span class="control-label">سرعة الشبكة:</span>
-                    <span class="control-value" id="networkSpeedValue">جاري القياس...</span>
-                </div>
-                <div class="control-row">
-                    <span class="control-label">حالة الجودة:</span>
-                    <span class="control-value" id="qualityStatus">تلقائي</span>
-                </div>
-                <div class="control-row">
-                    <span class="control-label">التكرار:</span>
-                    <button class="toggle-btn active" id="loopBtn">ON</button>
-                </div>
-            </div>
+            <!-- Video Settings -->
+            <section class="settings-section">
+                <h3 class="section-title">إعدادات الفيديو</h3>
 
-            <div class="control-group">
-                <h4>إعدادات VR</h4>
-                <div class="control-row">
-                    <span class="control-label">المسافة بين العينين:</span>
-                    <span class="control-value" id="ipdValue">0.5</span>
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>سرعة التشغيل</span>
+                        <span class="setting-value" id="speed-value">1.0x</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="speed-slider"
+                        min="0.25"
+                        max="2"
+                        step="0.25"
+                        value="1"
+                    >
                 </div>
-                <input type="range" class="slider" id="ipdSlider" min="0.1" max="1.5" step="0.1" value="0.5">
-                
-                <div class="control-row">
-                    <span class="control-label">حجم الإطار:</span>
-                    <span class="control-value" id="frameSizeValue">100%</span>
-                </div>
-                <input type="range" class="slider" id="frameSizeSlider" min="70" max="130" step="5" value="100">
-                
-                <div class="control-row">
-                    <span class="control-label">مقياس العرض:</span>
-                    <span class="control-value" id="scaleValue">100%</span>
-                </div>
-                <input type="range" class="slider" id="scaleSlider" min="50" max="150" step="5" value="100">
-                
-                <div class="control-row">
-                    <span class="control-label">عكس الصورة:</span>
-                    <button class="toggle-btn" id="invertBtn">OFF</button>
-                </div>
-            </div>
 
-            <div class="control-group">
-                <h4>التحكم بالوقت</h4>
-                <div class="time-controls">
-                    <button class="time-btn" id="back10s">-10s</button>
-                    <span class="control-value" id="timeDisplayAdv">00:00 / 00:00</span>
-                    <button class="time-btn" id="forward10s">+10s</button>
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>مستوى الصوت</span>
+                        <span class="setting-value" id="volume-value">70%</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="volume-slider"
+                        min="0"
+                        max="100"
+                        value="70"
+                    >
                 </div>
-                <div class="control-row">
-                    <span class="control-label">سرعة التشغيل:</span>
-                    <span class="control-value" id="speedValue">1.0x</span>
-                </div>
-                <input type="range" class="slider" id="speedSlider" min="0.25" max="2.0" step="0.25" value="1.0">
-            </div>
 
-            <div class="control-group">
-                <h4>إعدادات الصوت</h4>
-                <div class="control-row">
-                    <span class="control-label">مسار الصوت:</span>
-                    <span class="control-value">Track 1</span>
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>الجودة</span>
+                    </div>
+                    <select class="select" id="quality-select">
+                        <option value="auto">تلقائي</option>
+                        <option value="1080p">Full HD (1080p)</option>
+                        <option value="720p">HD (720p)</option>
+                        <option value="480p">SD (480p)</option>
+                    </select>
                 </div>
-                <div class="control-row">
-                    <span class="control-label">مستوى الصوت:</span>
-                    <span class="control-value" id="audioLevelValue">50%</span>
-                </div>
-                <input type="range" class="slider" id="audioLevelSlider" min="0" max="100" step="5" value="50">
-            </div>
 
-            <button class="reset-btn" id="resetBtn">إعادة الضبط</button>
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>تكرار الفيديو</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="loop-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VR Settings -->
+            <section class="settings-section">
+                <h3 class="section-title">إعدادات VR المتقدمة</h3>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>المسافة بين العينين (IPD)</span>
+                        <span class="setting-value" id="ipd-value">64mm</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="ipd-slider"
+                        min="55"
+                        max="75"
+                        value="64"
+                    >
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>المسافة بين القسمين</span>
+                        <span class="setting-value" id="separation-value">0px</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="separation-slider"
+                        min="0"
+                        max="20"
+                        value="2"
+                    >
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>حجم كل قسم (Width)</span>
+                        <span class="setting-value" id="section-width-value">50%</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="section-width-slider"
+                        min="45"
+                        max="55"
+                        step="0.5"
+                        value="50"
+                    >
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>مجال الرؤية (FOV)</span>
+                        <span class="setting-value" id="fov-value">75°</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="fov-slider"
+                        min="60"
+                        max="120"
+                        value="75"
+                    >
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>دوران الكاميرا</span>
+                        <span class="setting-value" id="rotation-value">0°</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="rotation-slider"
+                        min="-180"
+                        max="180"
+                        value="0"
+                    >
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>التكبير (Zoom)</span>
+                        <span class="setting-value" id="zoom-value">1.0x</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="zoom-slider"
+                        min="0.5"
+                        max="2"
+                        step="0.1"
+                        value="1"
+                    >
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>السطوع</span>
+                        <span class="setting-value" id="brightness-value">100%</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="brightness-slider"
+                        min="50"
+                        max="150"
+                        value="100"
+                    >
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>التباين</span>
+                        <span class="setting-value" id="contrast-value">100%</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        class="slider" 
+                        id="contrast-slider"
+                        min="50"
+                        max="150"
+                        value="100"
+                    >
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>عكس الصورة</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="invert-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Settings -->
+            <section class="settings-section">
+                <h3 class="section-title">الأداء</h3>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>جودة الرندر</span>
+                    </div>
+                    <select class="select" id="render-quality">
+                        <option value="low">منخفض (أسرع)</option>
+                        <option value="medium">متوسط</option>
+                        <option value="high" selected>عالي</option>
+                        <option value="ultra">فائق</option>
+                    </select>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span>Anti-aliasing</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="antialiasing-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Actions -->
+            <section class="settings-section">
+                <div class="btn-group">
+                    <button class="action-btn" id="reset-settings">
+                        <i class="fas fa-undo"></i>
+                        إعادة الضبط
+                    </button>
+                    <button class="action-btn primary" id="save-settings">
+                        <i class="fas fa-save"></i>
+                        حفظ
+                    </button>
+                </div>
+            </section>
+        </aside>
+
+        <!-- Quality Selector -->
+        <div id="quality-selector">
+            <button class="quality-option active" data-quality="auto">تلقائي</button>
+            <button class="quality-option" data-quality="1080p">1080p</button>
+            <button class="quality-option" data-quality="720p">720p</button>
+            <button class="quality-option" data-quality="480p">480p</button>
         </div>
+
+        <!-- VR Overlay -->
+        <div id="vr-overlay">
+            <div class="vr-divider"></div>
+            <div class="vr-controls-bottom">
+                <button class="vr-btn-circle" id="vr-play">
+                    <i class="fas fa-play"></i>
+                </button>
+                <button class="vr-btn-circle" id="vr-reset">
+                    <i class="fas fa-redo"></i>
+                </button>
+                <button class="vr-btn-circle" id="vr-exit">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Gyroscope Dialog -->
+        <div id="gyro-dialog">
+            <div class="gyro-content">
+                <h3>تفعيل مستشعر الحركة</h3>
+                <p>لتجربة VR مثالية، نحتاج إذن الوصول إلى مستشعر الحركة (Gyroscope). سيُطلب الإذن مرة واحدة فقط.</p>
+                <div class="gyro-actions">
+                    <button class="gyro-btn accept" id="accept-gyro">السماح</button>
+                    <button class="gyro-btn decline" id="decline-gyro">رفض</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification -->
+        <div id="notification"></div>
     </div>
 
     <script>
-        // العناصر الرئيسية
-        const container = document.getElementById('container');
-        const videoContainer = document.getElementById('videoContainer');
-        const videoPlayer = document.getElementById('videoPlayer');
-        const canvasContainer = document.getElementById('canvasContainer');
-        const vrOverlay = document.querySelector('.vr-overlay');
-        const vrControls = document.querySelector('.vr-controls');
-        const loading = document.getElementById('loading');
-        const controls = document.getElementById('controls');
-        const progressContainer = document.getElementById('progressContainer');
-        const progressBar = document.getElementById('progressBar');
-        const currentTimeDisplay = document.getElementById('currentTime');
-        const durationDisplay = document.getElementById('duration');
-        const playPauseBtn = document.getElementById('playPause');
-        const volumeBtn = document.getElementById('volumeBtn');
-        const volumeSlider = document.getElementById('volumeSlider');
-        const volumeLevel = document.getElementById('volumeLevel');
-        const fullscreenBtn = document.getElementById('fullscreenBtn');
-        const vrButton = document.getElementById('vrButton');
-        const modeIndicator = document.getElementById('modeIndicator');
-        const instructions = document.querySelector('.instructions');
-
-        // عناصر تحكم VR
-        const vrPlayPauseBtn = document.getElementById('vrPlayPause');
-        const vrExitBtn = document.getElementById('vrExit');
-        const vrResetViewBtn = document.getElementById('vrResetView');
-
-        // عناصر التحكم المتقدمة
-        const advancedToggle = document.getElementById('advancedToggle');
-        const advancedControls = document.getElementById('advancedControls');
-        const closeAdvanced = document.getElementById('closeAdvanced');
-        const qualityBtn = document.getElementById('qualityBtn');
-        const loopBtn = document.getElementById('loopBtn');
-        const ipdSlider = document.getElementById('ipdSlider');
-        const ipdValue = document.getElementById('ipdValue');
-        const frameSizeSlider = document.getElementById('frameSizeSlider');
-        const frameSizeValue = document.getElementById('frameSizeValue');
-        const scaleSlider = document.getElementById('scaleSlider');
-        const scaleValue = document.getElementById('scaleValue');
-        const invertBtn = document.getElementById('invertBtn');
-        const back10s = document.getElementById('back10s');
-        const forward10s = document.getElementById('forward10s');
-        const timeDisplayAdv = document.getElementById('timeDisplayAdv');
-        const speedSlider = document.getElementById('speedSlider');
-        const speedValue = document.getElementById('speedValue');
-        const audioLevelSlider = document.getElementById('audioLevelSlider');
-        const audioLevelValue = document.getElementById('audioLevelValue');
-        const resetBtn = document.getElementById('resetBtn');
-
-        // عناصر التحكم بالدقة
-        const qualityToggle = document.getElementById('qualityToggle');
-        const qualitySelector = document.getElementById('qualitySelector');
-        const currentQualityValue = document.getElementById('currentQualityValue');
-        const networkSpeedValue = document.getElementById('networkSpeedValue');
-        const qualityStatus = document.getElementById('qualityStatus');
-
-        // المتغيرات
-        let isPlaying = false;
-        let isFullscreen = false;
-        let isVRMode = false;
-        let isMouseMoving = false;
-        let mouseMoveTimeout;
-        let isGyroEnabled = false;
-        let orientationRequested = localStorage.getItem('gyroPermission') === 'granted';
+        // سيتم وضع JavaScript في ملف منفصل
+        console.log('🎬 360 VR Player - HTML Loaded');
+    </script>
+    <script src="main.js">
         
-        // Three.js variables
-        let scene, camera, renderer, controls3D, videoTexture, sphere;
-        let leftScene, leftCamera, leftRenderer;
-        let rightScene, rightCamera, rightRenderer;
-        let deviceOrientationControls;
-
-        // متغيرات التحكم المتقدم
-        let eyeDistance = parseFloat(localStorage.getItem('eyeDistance')) || 0.5;
-        let frameSize = parseFloat(localStorage.getItem('frameSize')) || 1.0;
-        let scaleFactor = parseFloat(localStorage.getItem('scaleFactor')) || 1.0;
-        let isInverted = localStorage.getItem('isInverted') === 'true' || false;
-        let playbackRate = parseFloat(localStorage.getItem('playbackRate')) || 1.0;
-        let volumeLevelValue = parseFloat(localStorage.getItem('volumeLevel')) || 0.5;
-
-        // متغيرات نظام الجودة
-        let availableQualities = [
-            { label: "تلقائي", value: "auto", bitrate: 0 },
-            { label: "144p", value: "144p", bitrate: 100000 },
-            { label: "240p", value: "240p", bitrate: 250000 },
-            { label: "360p", value: "360p", bitrate: 500000 },
-            { label: "480p", value: "480p", bitrate: 800000 },
-            { label: "720p (HD)", value: "720p", bitrate: 1500000 },
-            { label: "1080p (Full HD)", value: "1080p", bitrate: 3000000 },
-            { label: "1440p (2K)", value: "1440p", bitrate: 6000000 },
-            { label: "2160p (4K)", value: "2160p", bitrate: 12000000 }
-        ];
-        
-        let currentQuality = localStorage.getItem('videoQuality') || "auto";
-        let isAutoQuality = currentQuality === "auto";
-        let networkSpeed = 0;
-        let qualityChangeTimeout;
-
-        // حفظ الإعدادات في localStorage
-        function saveSettings() {
-            localStorage.setItem('eyeDistance', eyeDistance);
-            localStorage.setItem('frameSize', frameSize);
-            localStorage.setItem('scaleFactor', scaleFactor);
-            localStorage.setItem('isInverted', isInverted);
-            localStorage.setItem('playbackRate', playbackRate);
-            localStorage.setItem('volumeLevel', videoPlayer.volume);
-            localStorage.setItem('videoQuality', currentQuality);
-            localStorage.setItem('gyroPermission', orientationRequested ? 'granted' : 'denied');
-        }
-
-        // تحميل الإعدادات من localStorage
-        function loadSettings() {
-            // تطبيق إعدادات الجودة
-            qualitySelector.value = currentQuality;
-            updateQualityUI();
-            
-            // تطبيق إعدادات الصوت
-            videoPlayer.volume = volumeLevelValue;
-            volumeLevel.style.width = `${volumeLevelValue * 100}%`;
-            updateVolumeIcon(volumeLevelValue);
-            
-            // تطبيق إعدادات VR
-            ipdSlider.value = eyeDistance;
-            ipdValue.textContent = eyeDistance.toFixed(1);
-            
-            frameSizeSlider.value = frameSize * 100;
-            frameSizeValue.textContent = `${frameSize * 100}%`;
-            
-            scaleSlider.value = scaleFactor * 100;
-            scaleValue.textContent = `${scaleFactor * 100}%`;
-            
-            invertBtn.classList.toggle('active', isInverted);
-            invertBtn.textContent = isInverted ? 'ON' : 'OFF';
-            
-            speedSlider.value = playbackRate;
-            speedValue.textContent = `${playbackRate.toFixed(2)}x`;
-            videoPlayer.playbackRate = playbackRate;
-            
-            audioLevelSlider.value = volumeLevelValue * 100;
-            audioLevelValue.textContent = `${Math.round(volumeLevelValue * 100)}%`;
-            
-            // تطبيق التكرار
-            const savedLoop = localStorage.getItem('videoLoop');
-            if (savedLoop !== null) {
-                videoPlayer.loop = savedLoop === 'true';
-                loopBtn.classList.toggle('active', videoPlayer.loop);
-                loopBtn.textContent = videoPlayer.loop ? 'ON' : 'OFF';
-            }
-        }
-
-        // إعداد شريط التقدم
-        function setupProgressBar() {
-            let isDragging = false;
-            
-            progressContainer.addEventListener('mousedown', startDrag);
-            progressContainer.addEventListener('touchstart', startDrag);
-            
-            document.addEventListener('mousemove', duringDrag);
-            document.addEventListener('touchmove', duringDrag);
-            
-            document.addEventListener('mouseup', stopDrag);
-            document.addEventListener('touchend', stopDrag);
-            
-            function startDrag(e) {
-                isDragging = true;
-                setProgress(e);
-            }
-            
-            function duringDrag(e) {
-                if (isDragging) {
-                    setProgress(e);
-                }
-            }
-            
-            function stopDrag() {
-                isDragging = false;
-            }
-            
-            function setProgress(e) {
-                const rect = progressContainer.getBoundingClientRect();
-                let clientX;
-                
-                if (e.type.includes('touch')) {
-                    clientX = e.touches[0].clientX;
-                } else {
-                    clientX = e.clientX;
-                }
-                
-                const percent = (clientX - rect.left) / rect.width;
-                const newTime = percent * videoPlayer.duration;
-                
-                if (!isNaN(newTime) && isFinite(newTime)) {
-                    videoPlayer.currentTime = Math.max(0, Math.min(videoPlayer.duration, newTime));
-                }
-            }
-        }
-
-        // إعداد نظام الجودة
-        function setupQualitySystem() {
-            qualitySelector.addEventListener('change', function() {
-                changeVideoQuality(this.value);
-            });
-            
-            qualityToggle.addEventListener('click', function() {
-                toggleQuickQualityMenu();
-            });
-            
-            startNetworkMonitoring();
-        }
-
-        // تغيير جودة الفيديو
-        function changeVideoQuality(quality) {
-            clearTimeout(qualityChangeTimeout);
-            
-            const wasPlaying = !videoPlayer.paused;
-            const currentTime = videoPlayer.currentTime;
-            
-            loading.style.display = 'block';
-            
-            qualityChangeTimeout = setTimeout(() => {
-                currentQuality = quality;
-                isAutoQuality = (quality === 'auto');
-                
-                updateQualityUI();
-                simulateQualityChange(quality, wasPlaying, currentTime);
-                saveSettings();
-                
-            }, 500);
-        }
-
-        // محاكاة تغيير الجودة
-        function simulateQualityChange(quality, wasPlaying, currentTime) {
-            console.log(`تغيير جودة الفيديو إلى: ${quality}`);
-            
-            setTimeout(() => {
-                loading.style.display = 'none';
-                videoPlayer.currentTime = currentTime;
-                if (wasPlaying) {
-                    videoPlayer.play().catch(console.log);
-                }
-                
-                qualityStatus.textContent = isAutoQuality ? 'تلقائي' : `ثابت: ${getQualityLabel(quality)}`;
-                    
-            }, 1000);
-        }
-
-        // بدء مراقبة سرعة الشبكة
-        function startNetworkMonitoring() {
-            simulateNetworkSpeedTest();
-            setInterval(simulateNetworkSpeedTest, 10000);
-        }
-
-        // محاكاة اختبار سرعة الشبكة
-        function simulateNetworkSpeedTest() {
-            const baseSpeed = 2 + Math.random() * 8;
-            networkSpeed = baseSpeed;
-            
-            networkSpeedValue.textContent = `${networkSpeed.toFixed(1)} Mbps`;
-            
-            if (isAutoQuality) {
-                adjustQualityBasedOnNetwork();
-            }
-        }
-
-        // ضبط الجودة تلقائياً بناءً على سرعة الشبكة
-        function adjustQualityBasedOnNetwork() {
-            if (!isAutoQuality) return;
-            
-            let recommendedQuality;
-            
-            if (networkSpeed < 1) recommendedQuality = "144p";
-            else if (networkSpeed < 2) recommendedQuality = "240p";
-            else if (networkSpeed < 3) recommendedQuality = "360p";
-            else if (networkSpeed < 5) recommendedQuality = "480p";
-            else if (networkSpeed < 8) recommendedQuality = "720p";
-            else if (networkSpeed < 15) recommendedQuality = "1080p";
-            else if (networkSpeed < 25) recommendedQuality = "1440p";
-            else recommendedQuality = "2160p";
-            
-            if (currentQuality !== recommendedQuality) {
-                currentQuality = recommendedQuality;
-                updateQualityUI();
-                
-                const wasPlaying = !videoPlayer.paused;
-                const currentTime = videoPlayer.currentTime;
-                simulateQualityChange(recommendedQuality, wasPlaying, currentTime);
-            }
-        }
-
-        // تحديث واجهة مستخدم الجودة
-        function updateQualityUI() {
-            if (isAutoQuality) {
-                currentQualityValue.innerHTML = `<span class="quality-indicator auto-quality">تلقائي (${getQualityLabel(currentQuality)})</span>`;
-                qualityStatus.textContent = `تلقائي - ${getQualityLabel(currentQuality)}`;
-            } else {
-                currentQualityValue.innerHTML = `<span class="quality-indicator">${getQualityLabel(currentQuality)}</span>`;
-                qualityStatus.textContent = `ثابت: ${getQualityLabel(currentQuality)}`;
-            }
-            
-            qualitySelector.value = isAutoQuality ? 'auto' : currentQuality;
-        }
-
-        // الحصول على تسمية الجودة
-        function getQualityLabel(qualityValue) {
-            const quality = availableQualities.find(q => q.value === qualityValue);
-            return quality ? quality.label : qualityValue;
-        }
-
-        // تبديل قائمة الجودة السريعة
-        function toggleQuickQualityMenu() {
-            const existingMenu = document.getElementById('quickQualityMenu');
-            if (existingMenu) {
-                existingMenu.remove();
-                return;
-            }
-            
-            const quickQualityMenu = document.createElement('div');
-            quickQualityMenu.id = 'quickQualityMenu';
-            quickQualityMenu.style.cssText = `
-                position: absolute;
-                bottom: 70px;
-                left: 10px;
-                background: rgba(0, 0, 0, 0.9);
-                border-radius: 8px;
-                padding: 10px;
-                z-index: 1000;
-                min-width: 150px;
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-            `;
-            
-            availableQualities.forEach(quality => {
-                const qualityOption = document.createElement('div');
-                qualityOption.className = 'quality-option';
-                
-                if ((isAutoQuality && quality.value === 'auto') || (!isAutoQuality && quality.value === currentQuality)) {
-                    qualityOption.classList.add('active');
-                }
-                
-                qualityOption.innerHTML = `
-                    <span>${quality.label}</span>
-                    ${quality.value !== 'auto' ? `<small>${formatBitrate(quality.bitrate)}</small>` : ''}
-                `;
-                
-                qualityOption.addEventListener('click', function() {
-                    changeVideoQuality(quality.value);
-                    quickQualityMenu.remove();
-                });
-                
-                quickQualityMenu.appendChild(qualityOption);
-            });
-            
-            document.getElementById('controls').appendChild(quickQualityMenu);
-            
-            setTimeout(() => {
-                document.addEventListener('click', function closeMenu(e) {
-                    if (!quickQualityMenu.contains(e.target) && e.target.id !== 'qualityToggle') {
-                        quickQualityMenu.remove();
-                        document.removeEventListener('click', closeMenu);
-                    }
-                });
-            }, 100);
-        }
-
-        // تنسيق معدل البت
-        function formatBitrate(bitrate) {
-            if (bitrate >= 1000000) {
-                return (bitrate / 1000000).toFixed(1) + ' Mbps';
-            } else if (bitrate >= 1000) {
-                return (bitrate / 1000).toFixed(0) + ' Kbps';
-            } else {
-                return bitrate + ' bps';
-            }
-        }
-
-        // إعداد الجيروسكوب (يطلب مرة واحدة فقط)
-        function setupGyroscope() {
-            if (typeof DeviceOrientationEvent !== 'undefined') {
-                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    // إذا كان قد تم منح الإذن مسبقاً، قم بتفعيله مباشرة
-                    if (orientationRequested) {
-                        initDeviceOrientationControls();
-                    } else {
-                        // اطلب الإذن فقط عند الحاجة (عند تفعيل VR أو عند طلب المستخدم)
-                        vrButton.addEventListener('click', function vrGyroRequest() {
-                            if (!orientationRequested && !isGyroEnabled) {
-                                showGyroPermissionDialog();
-                            }
-                        });
-                    }
-                } else {
-                    // المتصفحات الأخرى
-                    initDeviceOrientationControls();
-                }
-            }
-        }
-
-        function initDeviceOrientationControls() {
-            try {
-                if (camera && !deviceOrientationControls) {
-                    deviceOrientationControls = new THREE.DeviceOrientationControls(camera);
-                    isGyroEnabled = true;
-                    if (controls3D) controls3D.enabled = false;
-                    orientationRequested = true;
-                    localStorage.setItem('gyroPermission', 'granted');
-                    console.log("Gyroscope controls initialized");
-                }
-            } catch (error) {
-                console.error("Error initializing gyroscope:", error);
-            }
-        }
-
-        // عرض طلب إذن الجايروسكوب
-        function showGyroPermissionDialog() {
-            const dialog = document.createElement('div');
-            dialog.className = 'gyro-permission';
-            dialog.innerHTML = `
-                <h3>تفعيل الجايروسكوب</h3>
-                <p>للاستمتاع بتجربة VR كاملة، نحتاج إلى الوصول إلى مستشعر الجايروسكوب في جهازك.</p>
-                <p>سيؤدي هذا إلى تحسين تجربة المشاهدة في وضع VR.</p>
-                <button id="enableGyroBtn">تفعيل الجايروسكوب</button>
-            `;
-            document.body.appendChild(dialog);
-            
-            document.getElementById('enableGyroBtn').addEventListener('click', function() {
-                DeviceOrientationEvent.requestPermission()
-                    .then(permissionState => {
-                        if (permissionState === 'granted') {
-                            orientationRequested = true;
-                            initDeviceOrientationControls();
-                            localStorage.setItem('gyroPermission', 'granted');
-                        }
-                        document.body.removeChild(dialog);
-                    })
-                    .catch(error => {
-                        console.error("Error requesting gyroscope permission:", error);
-                        document.body.removeChild(dialog);
-                    });
-            });
-        }
-
-        // إيقاف الجايروسكوب
-        function disableGyro() {
-            isGyroEnabled = false;
-            if (controls3D) controls3D.enabled = true;
-            deviceOrientationControls = null;
-        }
-
-        // تهيئة Three.js لمشهد 360
-        function initThreeJS() {
-            try {
-                scene = new THREE.Scene();
-                
-                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-                camera.position.set(0, 0, 0.1);
-                
-                renderer = new THREE.WebGLRenderer({ 
-                    antialias: true,
-                    alpha: false,
-                    powerPreference: "high-performance"
-                });
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-                renderer.setClearColor(0x000000, 1);
-                canvasContainer.appendChild(renderer.domElement);
-                
-                const geometry = new THREE.SphereGeometry(500, 64, 64);
-                geometry.scale(-1, 1, 1);
-                
-                videoTexture = new THREE.VideoTexture(videoPlayer);
-                videoTexture.minFilter = THREE.LinearFilter;
-                videoTexture.magFilter = THREE.LinearFilter;
-                videoTexture.format = THREE.RGBFormat;
-                
-                const material = new THREE.MeshBasicMaterial({ 
-                    map: videoTexture
-                });
-                
-                sphere = new THREE.Mesh(geometry, material);
-                scene.add(sphere);
-                
-                controls3D = new THREE.OrbitControls(camera, renderer.domElement);
-                controls3D.enableZoom = false;
-                controls3D.enablePan = false;
-                controls3D.rotateSpeed = -0.25;
-                
-                console.log("Three.js initialized successfully");
-                
-                animate();
-            } catch (error) {
-                console.error("Error initializing Three.js:", error);
-                loading.innerHTML = "خطأ في تحميل المشغل. يرجى تحديث الصفحة.";
-            }
-        }
-
-        // تهيئة وضع VR
-        function initVRMode() {
-            try {
-                while(canvasContainer.firstChild) {
-                    canvasContainer.removeChild(canvasContainer.firstChild);
-                }
-                
-                leftScene = new THREE.Scene();
-                leftCamera = new THREE.PerspectiveCamera(70, (window.innerWidth/2) / window.innerHeight, 0.1, 1000);
-                leftCamera.position.set(-eyeDistance, 0, 0);
-                
-                leftRenderer = new THREE.WebGLRenderer({ 
-                    antialias: true,
-                    alpha: false,
-                    powerPreference: "high-performance"
-                });
-                leftRenderer.setSize(window.innerWidth/2, window.innerHeight);
-                leftRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-                leftRenderer.setClearColor(0x000000, 1);
-                leftRenderer.domElement.style.position = 'absolute';
-                leftRenderer.domElement.style.left = '0';
-                leftRenderer.domElement.style.top = '0';
-                leftRenderer.domElement.style.width = '50%';
-                leftRenderer.domElement.style.height = '100%';
-                canvasContainer.appendChild(leftRenderer.domElement);
-                
-                rightScene = new THREE.Scene();
-                rightCamera = new THREE.PerspectiveCamera(70, (window.innerWidth/2) / window.innerHeight, 0.1, 1000);
-                rightCamera.position.set(eyeDistance, 0, 0);
-                
-                rightRenderer = new THREE.WebGLRenderer({ 
-                    antialias: true,
-                    alpha: false,
-                    powerPreference: "high-performance"
-                });
-                rightRenderer.setSize(window.innerWidth/2, window.innerHeight);
-                rightRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-                rightRenderer.setClearColor(0x000000, 1);
-                rightRenderer.domElement.style.position = 'absolute';
-                rightRenderer.domElement.style.left = '50%';
-                rightRenderer.domElement.style.top = '0';
-                rightRenderer.domElement.style.width = '50%';
-                rightRenderer.domElement.style.height = '100%';
-                canvasContainer.appendChild(rightRenderer.domElement);
-                
-                const geometry = new THREE.SphereGeometry(500, 64, 64);
-                geometry.scale(-1, 1, 1);
-                
-                const material = new THREE.MeshBasicMaterial({ 
-                    map: videoTexture
-                });
-                
-                const leftSphere = new THREE.Mesh(geometry, material);
-                leftScene.add(leftSphere);
-                
-                const rightSphere = new THREE.Mesh(geometry, material);
-                rightScene.add(rightSphere);
-                
-                applyVREffects();
-                
-                vrOverlay.style.display = 'block';
-                vrControls.style.display = 'flex';
-                
-                // تفعيل الجايروسكوب إذا كان مسموحاً
-                if (orientationRequested) {
-                    initDeviceOrientationControls();
-                }
-                
-                console.log("VR mode initialized successfully");
-            } catch (error) {
-                console.error("Error initializing VR mode:", error);
-            }
-        }
-        
-        // تطبيق تأثيرات VR
-        function applyVREffects() {
-            if (leftCamera && rightCamera) {
-                leftCamera.position.x = -eyeDistance;
-                rightCamera.position.x = eyeDistance;
-            }
-            
-            if (leftRenderer && rightRenderer) {
-                const frameWidth = (window.innerWidth/2) * frameSize;
-                const frameHeight = window.innerHeight * frameSize;
-                
-                leftRenderer.setSize(frameWidth, frameHeight);
-                rightRenderer.setSize(frameWidth, frameHeight);
-                
-                const leftOffset = (window.innerWidth/2 - frameWidth) / 2;
-                const rightOffset = window.innerWidth/2 + (window.innerWidth/2 - frameWidth) / 2;
-                
-                leftRenderer.domElement.style.left = `${leftOffset}px`;
-                rightRenderer.domElement.style.left = `${rightOffset}px`;
-                
-                const verticalOffset = (window.innerHeight - frameHeight) / 2;
-                leftRenderer.domElement.style.top = `${verticalOffset}px`;
-                rightRenderer.domElement.style.top = `${verticalOffset}px`;
-            }
-            
-            if (leftCamera && rightCamera) {
-                leftCamera.fov = 70 * scaleFactor;
-                rightCamera.fov = 70 * scaleFactor;
-                leftCamera.updateProjectionMatrix();
-                rightCamera.updateProjectionMatrix();
-            }
-            
-            if (isInverted) {
-                document.body.style.filter = 'invert(1)';
-            } else {
-                document.body.style.filter = 'none';
-            }
-        }
-        
-        // دورة التقديم
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            if (isVRMode) {
-                if (isGyroEnabled && deviceOrientationControls) {
-                    deviceOrientationControls.update();
-                    if (leftCamera && rightCamera) {
-                        leftCamera.quaternion.copy(camera.quaternion);
-                        rightCamera.quaternion.copy(camera.quaternion);
-                    }
-                }
-                
-                if (leftRenderer && leftScene && leftCamera) {
-                    leftRenderer.render(leftScene, leftCamera);
-                }
-                if (rightRenderer && rightScene && rightCamera) {
-                    rightRenderer.render(rightScene, rightCamera);
-                }
-            } else {
-                if (isGyroEnabled && deviceOrientationControls) {
-                    deviceOrientationControls.update();
-                }
-                
-                if (controls3D) {
-                    controls3D.update();
-                }
-                if (renderer && scene && camera) {
-                    renderer.render(scene, camera);
-                }
-            }
-        }
-        
-        // تهيئة الفيديو
-        videoPlayer.addEventListener('loadedmetadata', function() {
-            loading.style.display = 'none';
-            durationDisplay.textContent = formatTime(videoPlayer.duration);
-            timeDisplayAdv.textContent = `00:00 / ${formatTime(videoPlayer.duration)}`;
-            initThreeJS();
-            
-            setupProgressBar();
-            setupQualitySystem();
-            setupGyroscope();
-            loadSettings();
-        });
-
-        videoPlayer.addEventListener('waiting', function() {
-            loading.style.display = 'block';
-        });
-
-        videoPlayer.addEventListener('playing', function() {
-            loading.style.display = 'none';
-        });
-
-        videoPlayer.addEventListener('error', function(e) {
-            console.error("Video error:", e);
-            loading.innerHTML = "خطأ في تحميل الفيديو. تأكد من صحة المسار.";
-        });
-
-        // التحكم في التشغيل والإيقاف
-        playPauseBtn.addEventListener('click', togglePlayPause);
-        vrPlayPauseBtn.addEventListener('click', togglePlayPause);
-
-        function togglePlayPause() {
-            if (videoPlayer.paused) {
-                videoPlayer.play();
-                playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-                vrPlayPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-                isPlaying = true;
-            } else {
-                videoPlayer.pause();
-                playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-                vrPlayPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-                isPlaying = false;
-            }
-        }
-
-        // تحديث شريط التقدم
-        videoPlayer.addEventListener('timeupdate', updateProgress);
-
-        function updateProgress() {
-            if (videoPlayer.duration) {
-                const percent = (videoPlayer.currentTime / videoPlayer.duration) * 100;
-                progressBar.style.width = `${percent}%`;
-                currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
-                timeDisplayAdv.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
-            }
-        }
-
-        // التحكم في الصوت
-        volumeSlider.addEventListener('click', setVolume);
-
-        function setVolume(e) {
-            const rect = volumeSlider.getBoundingClientRect();
-            let percent = (e.clientX - rect.left) / rect.width;
-            percent = Math.max(0, Math.min(1, percent));
-            
-            videoPlayer.volume = percent;
-            volumeLevel.style.width = `${percent * 100}%`;
-            updateVolumeIcon(percent);
-            saveSettings();
-        }
-
-        volumeBtn.addEventListener('click', toggleMute);
-
-        function toggleMute() {
-            if (videoPlayer.volume > 0) {
-                videoPlayer.volume = 0;
-                volumeLevel.style.width = '0%';
-                volumeBtn.innerHTML = '<i class="fas fa-volume-mute"></i>';
-            } else {
-                videoPlayer.volume = volumeLevelValue;
-                volumeLevel.style.width = `${volumeLevelValue * 100}%`;
-                volumeBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
-            }
-            saveSettings();
-        }
-
-        function updateVolumeIcon(volume) {
-            if (volume === 0) {
-                volumeBtn.innerHTML = '<i class="fas fa-volume-mute"></i>';
-            } else if (volume < 0.5) {
-                volumeBtn.innerHTML = '<i class="fas fa-volume-down"></i>';
-            } else {
-                volumeBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
-            }
-        }
-
-        // وضع ملء الشاشة
-        fullscreenBtn.addEventListener('click', toggleFullscreen);
-
-        function toggleFullscreen() {
-            if (!isFullscreen) {
-                if (container.requestFullscreen) {
-                    container.requestFullscreen();
-                } else if (container.webkitRequestFullscreen) {
-                    container.webkitRequestFullscreen();
-                } else if (container.msRequestFullscreen) {
-                    container.msRequestFullscreen();
-                }
-                isFullscreen = true;
-                fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                } else if (document.webkitExitFullscreen) {
-                    document.webkitExitFullscreen();
-                } else if (document.msExitFullscreen) {
-                    document.msExitFullscreen();
-                }
-                isFullscreen = false;
-                fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
-            }
-        }
-
-        // وضع VR
-        vrButton.addEventListener('click', toggleVRMode);
-        vrExitBtn.addEventListener('click', toggleVRMode);
-
-        function toggleVRMode() {
-            if (!isVRMode) {
-                enableVRMode();
-            } else {
-                disableVRMode();
-            }
-        }
-
-        function enableVRMode() {
-            isVRMode = true;
-            modeIndicator.innerHTML = '<i class="fas fa-vr-cardboard"></i><span>وضع العرض: VR</span>';
-            vrButton.innerHTML = '<i class="fas fa-eye"></i> الوضع العادي';
-            
-            initVRMode();
-            
-            instructions.style.display = 'none';
-            controls.style.display = 'none';
-            advancedToggle.style.display = 'none';
-        }
-
-        function disableVRMode() {
-            isVRMode = false;
-            modeIndicator.innerHTML = '<i class="fas fa-vr-cardboard"></i><span>وضع العرض: عادي</span>';
-            vrButton.innerHTML = '<i class="fas fa-vr-cardboard"></i> وضع VR';
-            
-            while(canvasContainer.firstChild) {
-                canvasContainer.removeChild(canvasContainer.firstChild);
-            }
-            
-            initThreeJS();
-            
-            vrOverlay.style.display = 'none';
-            vrControls.style.display = 'none';
-            
-            instructions.style.display = 'block';
-            controls.style.display = 'block';
-            advancedToggle.style.display = 'flex';
-            
-            disableGyro();
-        }
-
-        // إعادة ضبط المنظر
-        vrResetViewBtn.addEventListener('click', resetView);
-
-        function resetView() {
-            if (controls3D) {
-                controls3D.reset();
-            }
-            if (deviceOrientationControls && isGyroEnabled) {
-                deviceOrientationControls.reset();
-            }
-        }
-
-        // التحكم المتقدم
-        advancedToggle.addEventListener('click', function() {
-            advancedControls.style.display = advancedControls.style.display === 'block' ? 'none' : 'block';
-        });
-
-        closeAdvanced.addEventListener('click', function() {
-            advancedControls.style.display = 'none';
-        });
-
-        // جودة الفيديو
-        qualityBtn.addEventListener('click', function() {
-            qualityBtn.classList.toggle('active');
-            qualityBtn.textContent = qualityBtn.classList.contains('active') ? 'HD' : 'SD';
-        });
-
-        // التكرار
-        loopBtn.addEventListener('click', function() {
-            videoPlayer.loop = !videoPlayer.loop;
-            loopBtn.classList.toggle('active');
-            loopBtn.textContent = videoPlayer.loop ? 'ON' : 'OFF';
-            localStorage.setItem('videoLoop', videoPlayer.loop);
-        });
-
-        // المسافة بين العينين
-        ipdSlider.addEventListener('input', function() {
-            eyeDistance = parseFloat(this.value);
-            ipdValue.textContent = eyeDistance.toFixed(1);
-            if (isVRMode) {
-                applyVREffects();
-            }
-            saveSettings();
-        });
-
-        // حجم الإطار
-        frameSizeSlider.addEventListener('input', function() {
-            frameSize = parseInt(this.value) / 100;
-            frameSizeValue.textContent = `${this.value}%`;
-            if (isVRMode) {
-                applyVREffects();
-            }
-            saveSettings();
-        });
-
-        // مقياس العرض
-        scaleSlider.addEventListener('input', function() {
-            scaleFactor = parseInt(this.value) / 100;
-            scaleValue.textContent = `${this.value}%`;
-            if (isVRMode) {
-                applyVREffects();
-            }
-            saveSettings();
-        });
-
-        // عكس الصورة
-        invertBtn.addEventListener('click', function() {
-            isInverted = !isInverted;
-            invertBtn.classList.toggle('active');
-            invertBtn.textContent = isInverted ? 'ON' : 'OFF';
-            applyVREffects();
-            saveSettings();
-        });
-
-        // التحكم بالوقت
-        back10s.addEventListener('click', function() {
-            videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - 10);
-        });
-
-        forward10s.addEventListener('click', function() {
-            videoPlayer.currentTime = Math.min(videoPlayer.duration, videoPlayer.currentTime + 10);
-        });
-
-        // سرعة التشغيل
-        speedSlider.addEventListener('input', function() {
-            playbackRate = parseFloat(this.value);
-            videoPlayer.playbackRate = playbackRate;
-            speedValue.textContent = `${playbackRate.toFixed(2)}x`;
-            saveSettings();
-        });
-
-        // مستوى الصوت
-        audioLevelSlider.addEventListener('input', function() {
-            const level = parseInt(this.value);
-            videoPlayer.volume = level / 100;
-            audioLevelValue.textContent = `${level}%`;
-            volumeLevel.style.width = `${level}%`;
-            updateVolumeIcon(level / 100);
-            saveSettings();
-        });
-
-        // إعادة الضبط
-        resetBtn.addEventListener('click', function() {
-            // إعادة تعيين جميع الإعدادات
-            eyeDistance = 0.5;
-            frameSize = 1.0;
-            scaleFactor = 1.0;
-            isInverted = false;
-            playbackRate = 1.0;
-            currentQuality = "auto";
-            isAutoQuality = true;
-            
-            ipdSlider.value = eyeDistance;
-            ipdValue.textContent = eyeDistance.toFixed(1);
-            
-            frameSizeSlider.value = 100;
-            frameSizeValue.textContent = '100%';
-            
-            scaleSlider.value = 100;
-            scaleValue.textContent = '100%';
-            
-            invertBtn.classList.remove('active');
-            invertBtn.textContent = 'OFF';
-            
-            speedSlider.value = playbackRate;
-            speedValue.textContent = '1.0x';
-            
-            videoPlayer.playbackRate = playbackRate;
-            videoPlayer.currentTime = 0;
-            
-            qualitySelector.value = 'auto';
-            updateQualityUI();
-            
-            if (isVRMode) {
-                applyVREffects();
-            }
-            
-            document.body.style.filter = 'none';
-            
-            // مسح localStorage
-            localStorage.clear();
-            saveSettings();
-        });
-
-        // إعادة ضبط الحجم عند تغيير حجم النافذة
-        window.addEventListener('resize', function() {
-            if (isVRMode) {
-                applyVREffects();
-            } else {
-                if (camera && renderer) {
-                    camera.aspect = window.innerWidth / window.innerHeight;
-                    camera.updateProjectionMatrix();
-                    renderer.setSize(window.innerWidth, window.innerHeight);
-                }
-            }
-            
-            if (isAutoQuality) {
-                adjustQualityBasedOnNetwork();
-            }
-        });
-
-        // إخفاء عناصر التحكم تلقائياً
-        container.addEventListener('mousemove', showControls);
-        container.addEventListener('touchstart', showControls);
-
-        function showControls() {
-            if (!isVRMode) {
-                controls.classList.remove('controls-hidden');
-                instructions.classList.remove('controls-hidden');
-                isMouseMoving = true;
-                
-                clearTimeout(mouseMoveTimeout);
-                mouseMoveTimeout = setTimeout(() => {
-                    if (isPlaying && !isMouseMoving) {
-                        controls.classList.add('controls-hidden');
-                        instructions.classList.add('controls-hidden');
-                    }
-                }, 3000);
-                
-                setTimeout(() => {
-                    isMouseMoving = false;
-                }, 100);
-            }
-        }
-
-        // تنسيق الوقت
-        function formatTime(seconds) {
-            if (isNaN(seconds)) return "00:00";
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        }
-
-        // تهيئة أولية
-        volumeLevel.style.width = `${videoPlayer.volume * 100}%`;
-        updateVolumeIcon(videoPlayer.volume);
-        
-        // بدء تشغيل الفيديو تلقائياً عند التحميل
-        videoPlayer.addEventListener('canplay', function() {
-            videoPlayer.play().then(() => {
-                playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-                vrPlayPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-                isPlaying = true;
-            }).catch(e => {
-                console.log("التشغيل التلقائي غير مسموح: ", e);
-            });
-        });
-
-        // معالجة أخطاء Three.js
-        window.addEventListener('error', function(e) {
-            console.error("Global error:", e);
-        });
     </script>
 </body>
 </html>
