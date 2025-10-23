@@ -9,7 +9,6 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/DeviceOrientationControls.js"></script>
     <style>
-        /* جميع الأنماط تبقى كما هي بدون تغيير */
         * {
             margin: 0;
             padding: 0;
@@ -678,6 +677,69 @@
                 transform: scale(0.95);
             }
         }
+
+        /* أنماط جديدة للتحكم بالدقة */
+        .quality-selector {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 0.8rem;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        
+        .quality-selector option {
+            background: #333;
+            color: white;
+        }
+        
+        .quality-indicator {
+            display: inline-block;
+            padding: 2px 6px;
+            background: rgba(255, 60, 0, 0.3);
+            border-radius: 4px;
+            font-size: 0.7rem;
+            margin-right: 5px;
+        }
+        
+        .auto-quality {
+            background: rgba(0, 150, 255, 0.3);
+        }
+        
+        #quickQualityMenu {
+            position: absolute;
+            bottom: 70px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 8px;
+            padding: 10px;
+            z-index: 1000;
+            min-width: 150px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .quality-option {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 2px 0;
+            font-size: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .quality-option:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .quality-option.active {
+            background: rgba(255, 60, 0, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -739,6 +801,9 @@
                             <div id="volumeLevel"></div>
                         </div>
                     </div>
+                    <button id="qualityToggle" class="control-btn" title="تبديل الجودة">
+                        <i class="fas fa-tachometer-alt"></i>
+                    </button>
                 </div>
                 <div id="rightControls">
                     <button id="vrButton">
@@ -771,6 +836,31 @@
                 <div class="control-row">
                     <span class="control-label">الجودة:</span>
                     <button class="toggle-btn active" id="qualityBtn">HD</button>
+                </div>
+                <div class="control-row">
+                    <span class="control-label">جودة الفيديو:</span>
+                    <span class="control-value" id="currentQualityValue">
+                        <span class="quality-indicator auto-quality">تلقائي</span>
+                    </span>
+                </div>
+                <select class="quality-selector" id="qualitySelector">
+                    <option value="auto">تلقائي</option>
+                    <option value="144p">144p (100 Kbps)</option>
+                    <option value="240p">240p (250 Kbps)</option>
+                    <option value="360p">360p (500 Kbps)</option>
+                    <option value="480p">480p (800 Kbps)</option>
+                    <option value="720p">720p (HD) (1.5 Mbps)</option>
+                    <option value="1080p">1080p (Full HD) (3 Mbps)</option>
+                    <option value="1440p">1440p (2K) (6 Mbps)</option>
+                    <option value="2160p">2160p (4K) (12 Mbps)</option>
+                </select>
+                <div class="control-row">
+                    <span class="control-label">سرعة الشبكة:</span>
+                    <span class="control-value" id="networkSpeedValue">جاري القياس...</span>
+                </div>
+                <div class="control-row">
+                    <span class="control-label">حالة الجودة:</span>
+                    <span class="control-value" id="qualityStatus">تلقائي</span>
                 </div>
                 <div class="control-row">
                     <span class="control-label">التكرار:</span>
@@ -885,6 +975,13 @@
         const audioLevelValue = document.getElementById('audioLevelValue');
         const resetBtn = document.getElementById('resetBtn');
 
+        // عناصر التحكم بالدقة
+        const qualityToggle = document.getElementById('qualityToggle');
+        const qualitySelector = document.getElementById('qualitySelector');
+        const currentQualityValue = document.getElementById('currentQualityValue');
+        const networkSpeedValue = document.getElementById('networkSpeedValue');
+        const qualityStatus = document.getElementById('qualityStatus');
+
         // المتغيرات
         let isPlaying = false;
         let isFullscreen = false;
@@ -892,7 +989,7 @@
         let isMouseMoving = false;
         let mouseMoveTimeout;
         let isGyroEnabled = false;
-        let orientationRequested = false;
+        let orientationRequested = localStorage.getItem('gyroPermission') === 'granted';
         
         // Three.js variables
         let scene, camera, renderer, controls3D, videoTexture, sphere;
@@ -901,18 +998,85 @@
         let deviceOrientationControls;
 
         // متغيرات التحكم المتقدم
-        let eyeDistance = 0.5;
-        let frameSize = 1.0;
-        let scaleFactor = 1.0;
-        let isInverted = false;
-        let playbackRate = 1.0;
+        let eyeDistance = parseFloat(localStorage.getItem('eyeDistance')) || 0.5;
+        let frameSize = parseFloat(localStorage.getItem('frameSize')) || 1.0;
+        let scaleFactor = parseFloat(localStorage.getItem('scaleFactor')) || 1.0;
+        let isInverted = localStorage.getItem('isInverted') === 'true' || false;
+        let playbackRate = parseFloat(localStorage.getItem('playbackRate')) || 1.0;
+        let volumeLevelValue = parseFloat(localStorage.getItem('volumeLevel')) || 0.5;
 
-        // إصلاح 1: تحسين شريط التقدم
-        function setupProgressBar() {
-            // النقر على شريط التقدم
-            progressContainer.addEventListener('click', setProgress);
+        // متغيرات نظام الجودة
+        let availableQualities = [
+            { label: "تلقائي", value: "auto", bitrate: 0 },
+            { label: "144p", value: "144p", bitrate: 100000 },
+            { label: "240p", value: "240p", bitrate: 250000 },
+            { label: "360p", value: "360p", bitrate: 500000 },
+            { label: "480p", value: "480p", bitrate: 800000 },
+            { label: "720p (HD)", value: "720p", bitrate: 1500000 },
+            { label: "1080p (Full HD)", value: "1080p", bitrate: 3000000 },
+            { label: "1440p (2K)", value: "1440p", bitrate: 6000000 },
+            { label: "2160p (4K)", value: "2160p", bitrate: 12000000 }
+        ];
+        
+        let currentQuality = localStorage.getItem('videoQuality') || "auto";
+        let isAutoQuality = currentQuality === "auto";
+        let networkSpeed = 0;
+        let qualityChangeTimeout;
+
+        // حفظ الإعدادات في localStorage
+        function saveSettings() {
+            localStorage.setItem('eyeDistance', eyeDistance);
+            localStorage.setItem('frameSize', frameSize);
+            localStorage.setItem('scaleFactor', scaleFactor);
+            localStorage.setItem('isInverted', isInverted);
+            localStorage.setItem('playbackRate', playbackRate);
+            localStorage.setItem('volumeLevel', videoPlayer.volume);
+            localStorage.setItem('videoQuality', currentQuality);
+            localStorage.setItem('gyroPermission', orientationRequested ? 'granted' : 'denied');
+        }
+
+        // تحميل الإعدادات من localStorage
+        function loadSettings() {
+            // تطبيق إعدادات الجودة
+            qualitySelector.value = currentQuality;
+            updateQualityUI();
             
-            // السحب على شريط التقدم
+            // تطبيق إعدادات الصوت
+            videoPlayer.volume = volumeLevelValue;
+            volumeLevel.style.width = `${volumeLevelValue * 100}%`;
+            updateVolumeIcon(volumeLevelValue);
+            
+            // تطبيق إعدادات VR
+            ipdSlider.value = eyeDistance;
+            ipdValue.textContent = eyeDistance.toFixed(1);
+            
+            frameSizeSlider.value = frameSize * 100;
+            frameSizeValue.textContent = `${frameSize * 100}%`;
+            
+            scaleSlider.value = scaleFactor * 100;
+            scaleValue.textContent = `${scaleFactor * 100}%`;
+            
+            invertBtn.classList.toggle('active', isInverted);
+            invertBtn.textContent = isInverted ? 'ON' : 'OFF';
+            
+            speedSlider.value = playbackRate;
+            speedValue.textContent = `${playbackRate.toFixed(2)}x`;
+            videoPlayer.playbackRate = playbackRate;
+            
+            audioLevelSlider.value = volumeLevelValue * 100;
+            audioLevelValue.textContent = `${Math.round(volumeLevelValue * 100)}%`;
+            
+            // تطبيق التكرار
+            const savedLoop = localStorage.getItem('videoLoop');
+            if (savedLoop !== null) {
+                videoPlayer.loop = savedLoop === 'true';
+                loopBtn.classList.toggle('active', videoPlayer.loop);
+                loopBtn.textContent = videoPlayer.loop ? 'ON' : 'OFF';
+            }
+        }
+
+        // إعداد شريط التقدم
+        function setupProgressBar() {
             let isDragging = false;
             
             progressContainer.addEventListener('mousedown', startDrag);
@@ -958,40 +1122,199 @@
             }
         }
 
-        // إصلاح 2: تحسين ظهور زر VR على الهواتف
-        function fixVRButton() {
-            // تأكد من ظهور زر VR على جميع الأجهزة
-            vrButton.style.display = 'flex';
-            vrButton.style.alignItems = 'center';
-            vrButton.style.justifyContent = 'center';
+        // إعداد نظام الجودة
+        function setupQualitySystem() {
+            qualitySelector.addEventListener('change', function() {
+                changeVideoQuality(this.value);
+            });
             
-            // تحسين التخطيط على الشاشات الصغيرة
-            if (window.innerWidth <= 480) {
-                vrButton.style.padding = '10px 15px';
-                vrButton.style.fontSize = '0.8rem';
+            qualityToggle.addEventListener('click', function() {
+                toggleQuickQualityMenu();
+            });
+            
+            startNetworkMonitoring();
+        }
+
+        // تغيير جودة الفيديو
+        function changeVideoQuality(quality) {
+            clearTimeout(qualityChangeTimeout);
+            
+            const wasPlaying = !videoPlayer.paused;
+            const currentTime = videoPlayer.currentTime;
+            
+            loading.style.display = 'block';
+            
+            qualityChangeTimeout = setTimeout(() => {
+                currentQuality = quality;
+                isAutoQuality = (quality === 'auto');
+                
+                updateQualityUI();
+                simulateQualityChange(quality, wasPlaying, currentTime);
+                saveSettings();
+                
+            }, 500);
+        }
+
+        // محاكاة تغيير الجودة
+        function simulateQualityChange(quality, wasPlaying, currentTime) {
+            console.log(`تغيير جودة الفيديو إلى: ${quality}`);
+            
+            setTimeout(() => {
+                loading.style.display = 'none';
+                videoPlayer.currentTime = currentTime;
+                if (wasPlaying) {
+                    videoPlayer.play().catch(console.log);
+                }
+                
+                qualityStatus.textContent = isAutoQuality ? 'تلقائي' : `ثابت: ${getQualityLabel(quality)}`;
+                    
+            }, 1000);
+        }
+
+        // بدء مراقبة سرعة الشبكة
+        function startNetworkMonitoring() {
+            simulateNetworkSpeedTest();
+            setInterval(simulateNetworkSpeedTest, 10000);
+        }
+
+        // محاكاة اختبار سرعة الشبكة
+        function simulateNetworkSpeedTest() {
+            const baseSpeed = 2 + Math.random() * 8;
+            networkSpeed = baseSpeed;
+            
+            networkSpeedValue.textContent = `${networkSpeed.toFixed(1)} Mbps`;
+            
+            if (isAutoQuality) {
+                adjustQualityBasedOnNetwork();
             }
         }
 
-        // إصلاح 3: تحسين الجيروسكوب
+        // ضبط الجودة تلقائياً بناءً على سرعة الشبكة
+        function adjustQualityBasedOnNetwork() {
+            if (!isAutoQuality) return;
+            
+            let recommendedQuality;
+            
+            if (networkSpeed < 1) recommendedQuality = "144p";
+            else if (networkSpeed < 2) recommendedQuality = "240p";
+            else if (networkSpeed < 3) recommendedQuality = "360p";
+            else if (networkSpeed < 5) recommendedQuality = "480p";
+            else if (networkSpeed < 8) recommendedQuality = "720p";
+            else if (networkSpeed < 15) recommendedQuality = "1080p";
+            else if (networkSpeed < 25) recommendedQuality = "1440p";
+            else recommendedQuality = "2160p";
+            
+            if (currentQuality !== recommendedQuality) {
+                currentQuality = recommendedQuality;
+                updateQualityUI();
+                
+                const wasPlaying = !videoPlayer.paused;
+                const currentTime = videoPlayer.currentTime;
+                simulateQualityChange(recommendedQuality, wasPlaying, currentTime);
+            }
+        }
+
+        // تحديث واجهة مستخدم الجودة
+        function updateQualityUI() {
+            if (isAutoQuality) {
+                currentQualityValue.innerHTML = `<span class="quality-indicator auto-quality">تلقائي (${getQualityLabel(currentQuality)})</span>`;
+                qualityStatus.textContent = `تلقائي - ${getQualityLabel(currentQuality)}`;
+            } else {
+                currentQualityValue.innerHTML = `<span class="quality-indicator">${getQualityLabel(currentQuality)}</span>`;
+                qualityStatus.textContent = `ثابت: ${getQualityLabel(currentQuality)}`;
+            }
+            
+            qualitySelector.value = isAutoQuality ? 'auto' : currentQuality;
+        }
+
+        // الحصول على تسمية الجودة
+        function getQualityLabel(qualityValue) {
+            const quality = availableQualities.find(q => q.value === qualityValue);
+            return quality ? quality.label : qualityValue;
+        }
+
+        // تبديل قائمة الجودة السريعة
+        function toggleQuickQualityMenu() {
+            const existingMenu = document.getElementById('quickQualityMenu');
+            if (existingMenu) {
+                existingMenu.remove();
+                return;
+            }
+            
+            const quickQualityMenu = document.createElement('div');
+            quickQualityMenu.id = 'quickQualityMenu';
+            quickQualityMenu.style.cssText = `
+                position: absolute;
+                bottom: 70px;
+                left: 10px;
+                background: rgba(0, 0, 0, 0.9);
+                border-radius: 8px;
+                padding: 10px;
+                z-index: 1000;
+                min-width: 150px;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            `;
+            
+            availableQualities.forEach(quality => {
+                const qualityOption = document.createElement('div');
+                qualityOption.className = 'quality-option';
+                
+                if ((isAutoQuality && quality.value === 'auto') || (!isAutoQuality && quality.value === currentQuality)) {
+                    qualityOption.classList.add('active');
+                }
+                
+                qualityOption.innerHTML = `
+                    <span>${quality.label}</span>
+                    ${quality.value !== 'auto' ? `<small>${formatBitrate(quality.bitrate)}</small>` : ''}
+                `;
+                
+                qualityOption.addEventListener('click', function() {
+                    changeVideoQuality(quality.value);
+                    quickQualityMenu.remove();
+                });
+                
+                quickQualityMenu.appendChild(qualityOption);
+            });
+            
+            document.getElementById('controls').appendChild(quickQualityMenu);
+            
+            setTimeout(() => {
+                document.addEventListener('click', function closeMenu(e) {
+                    if (!quickQualityMenu.contains(e.target) && e.target.id !== 'qualityToggle') {
+                        quickQualityMenu.remove();
+                        document.removeEventListener('click', closeMenu);
+                    }
+                });
+            }, 100);
+        }
+
+        // تنسيق معدل البت
+        function formatBitrate(bitrate) {
+            if (bitrate >= 1000000) {
+                return (bitrate / 1000000).toFixed(1) + ' Mbps';
+            } else if (bitrate >= 1000) {
+                return (bitrate / 1000).toFixed(0) + ' Kbps';
+            } else {
+                return bitrate + ' bps';
+            }
+        }
+
+        // إعداد الجيروسكوب (يطلب مرة واحدة فقط)
         function setupGyroscope() {
             if (typeof DeviceOrientationEvent !== 'undefined') {
-                // طلب الإذن تلقائياً
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    // على iOS، نطلب الإذن عند النقر على الزر
-                    document.addEventListener('click', function initialGyroRequest() {
-                        if (!orientationRequested) {
-                            DeviceOrientationEvent.requestPermission()
-                                .then(permissionState => {
-                                    if (permissionState === 'granted') {
-                                        orientationRequested = true;
-                                        initDeviceOrientationControls();
-                                        console.log("Gyroscope permission granted");
-                                    }
-                                })
-                                .catch(console.error);
-                        }
-                        document.removeEventListener('click', initialGyroRequest);
-                    });
+                    // إذا كان قد تم منح الإذن مسبقاً، قم بتفعيله مباشرة
+                    if (orientationRequested) {
+                        initDeviceOrientationControls();
+                    } else {
+                        // اطلب الإذن فقط عند الحاجة (عند تفعيل VR أو عند طلب المستخدم)
+                        vrButton.addEventListener('click', function vrGyroRequest() {
+                            if (!orientationRequested && !isGyroEnabled) {
+                                showGyroPermissionDialog();
+                            }
+                        });
+                    }
                 } else {
                     // المتصفحات الأخرى
                     initDeviceOrientationControls();
@@ -1005,6 +1328,8 @@
                     deviceOrientationControls = new THREE.DeviceOrientationControls(camera);
                     isGyroEnabled = true;
                     if (controls3D) controls3D.enabled = false;
+                    orientationRequested = true;
+                    localStorage.setItem('gyroPermission', 'granted');
                     console.log("Gyroscope controls initialized");
                 }
             } catch (error) {
@@ -1012,17 +1337,50 @@
             }
         }
 
+        // عرض طلب إذن الجايروسكوب
+        function showGyroPermissionDialog() {
+            const dialog = document.createElement('div');
+            dialog.className = 'gyro-permission';
+            dialog.innerHTML = `
+                <h3>تفعيل الجايروسكوب</h3>
+                <p>للاستمتاع بتجربة VR كاملة، نحتاج إلى الوصول إلى مستشعر الجايروسكوب في جهازك.</p>
+                <p>سيؤدي هذا إلى تحسين تجربة المشاهدة في وضع VR.</p>
+                <button id="enableGyroBtn">تفعيل الجايروسكوب</button>
+            `;
+            document.body.appendChild(dialog);
+            
+            document.getElementById('enableGyroBtn').addEventListener('click', function() {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            orientationRequested = true;
+                            initDeviceOrientationControls();
+                            localStorage.setItem('gyroPermission', 'granted');
+                        }
+                        document.body.removeChild(dialog);
+                    })
+                    .catch(error => {
+                        console.error("Error requesting gyroscope permission:", error);
+                        document.body.removeChild(dialog);
+                    });
+            });
+        }
+
+        // إيقاف الجايروسكوب
+        function disableGyro() {
+            isGyroEnabled = false;
+            if (controls3D) controls3D.enabled = true;
+            deviceOrientationControls = null;
+        }
+
         // تهيئة Three.js لمشهد 360
         function initThreeJS() {
             try {
-                // إنشاء المشهد
                 scene = new THREE.Scene();
                 
-                // إنشاء الكاميرا
                 camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
                 camera.position.set(0, 0, 0.1);
                 
-                // إنشاء العارض
                 renderer = new THREE.WebGLRenderer({ 
                     antialias: true,
                     alpha: false,
@@ -1033,11 +1391,9 @@
                 renderer.setClearColor(0x000000, 1);
                 canvasContainer.appendChild(renderer.domElement);
                 
-                // إنشاء كرة لعرض الفيديو 360
                 const geometry = new THREE.SphereGeometry(500, 64, 64);
-                geometry.scale(-1, 1, 1); // عكس الكرة لرؤية الداخل
+                geometry.scale(-1, 1, 1);
                 
-                // إنشاء نسيج الفيديو
                 videoTexture = new THREE.VideoTexture(videoPlayer);
                 videoTexture.minFilter = THREE.LinearFilter;
                 videoTexture.magFilter = THREE.LinearFilter;
@@ -1050,7 +1406,6 @@
                 sphere = new THREE.Mesh(geometry, material);
                 scene.add(sphere);
                 
-                // إضافة تحكم بالماوس
                 controls3D = new THREE.OrbitControls(camera, renderer.domElement);
                 controls3D.enableZoom = false;
                 controls3D.enablePan = false;
@@ -1058,7 +1413,6 @@
                 
                 console.log("Three.js initialized successfully");
                 
-                // بدء التقديم
                 animate();
             } catch (error) {
                 console.error("Error initializing Three.js:", error);
@@ -1069,12 +1423,10 @@
         // تهيئة وضع VR
         function initVRMode() {
             try {
-                // مسح العارض الرئيسي
                 while(canvasContainer.firstChild) {
                     canvasContainer.removeChild(canvasContainer.firstChild);
                 }
                 
-                // إنشاء مشهد للعين اليسرى
                 leftScene = new THREE.Scene();
                 leftCamera = new THREE.PerspectiveCamera(70, (window.innerWidth/2) / window.innerHeight, 0.1, 1000);
                 leftCamera.position.set(-eyeDistance, 0, 0);
@@ -1094,7 +1446,6 @@
                 leftRenderer.domElement.style.height = '100%';
                 canvasContainer.appendChild(leftRenderer.domElement);
                 
-                // إنشاء مشهد للعين اليمنى
                 rightScene = new THREE.Scene();
                 rightCamera = new THREE.PerspectiveCamera(70, (window.innerWidth/2) / window.innerHeight, 0.1, 1000);
                 rightCamera.position.set(eyeDistance, 0, 0);
@@ -1114,7 +1465,6 @@
                 rightRenderer.domElement.style.height = '100%';
                 canvasContainer.appendChild(rightRenderer.domElement);
                 
-                // إضافة الكرة لكلا المشهدين
                 const geometry = new THREE.SphereGeometry(500, 64, 64);
                 geometry.scale(-1, 1, 1);
                 
@@ -1128,15 +1478,15 @@
                 const rightSphere = new THREE.Mesh(geometry, material);
                 rightScene.add(rightSphere);
                 
-                // تطبيق تأثيرات VR
                 applyVREffects();
                 
-                // إظهار VR overlay
                 vrOverlay.style.display = 'block';
                 vrControls.style.display = 'flex';
                 
-                // تفعيل الجايروسكوب
-                setupGyroscope();
+                // تفعيل الجايروسكوب إذا كان مسموحاً
+                if (orientationRequested) {
+                    initDeviceOrientationControls();
+                }
                 
                 console.log("VR mode initialized successfully");
             } catch (error) {
@@ -1146,13 +1496,11 @@
         
         // تطبيق تأثيرات VR
         function applyVREffects() {
-            // تطبيق المسافة بين العينين
             if (leftCamera && rightCamera) {
                 leftCamera.position.x = -eyeDistance;
                 rightCamera.position.x = eyeDistance;
             }
             
-            // تطبيق حجم الإطار
             if (leftRenderer && rightRenderer) {
                 const frameWidth = (window.innerWidth/2) * frameSize;
                 const frameHeight = window.innerHeight * frameSize;
@@ -1160,7 +1508,6 @@
                 leftRenderer.setSize(frameWidth, frameHeight);
                 rightRenderer.setSize(frameWidth, frameHeight);
                 
-                // مركزة الإطارات
                 const leftOffset = (window.innerWidth/2 - frameWidth) / 2;
                 const rightOffset = window.innerWidth/2 + (window.innerWidth/2 - frameWidth) / 2;
                 
@@ -1172,7 +1519,6 @@
                 rightRenderer.domElement.style.top = `${verticalOffset}px`;
             }
             
-            // تطبيق مقياس العرض
             if (leftCamera && rightCamera) {
                 leftCamera.fov = 70 * scaleFactor;
                 rightCamera.fov = 70 * scaleFactor;
@@ -1180,7 +1526,6 @@
                 rightCamera.updateProjectionMatrix();
             }
             
-            // تطبيق عكس الصورة
             if (isInverted) {
                 document.body.style.filter = 'invert(1)';
             } else {
@@ -1193,10 +1538,8 @@
             requestAnimationFrame(animate);
             
             if (isVRMode) {
-                // تحديث التحكم بالجايروسكوب في وضع VR
                 if (isGyroEnabled && deviceOrientationControls) {
                     deviceOrientationControls.update();
-                    // تطبيق نفس الدوران على كلا الكاميرات
                     if (leftCamera && rightCamera) {
                         leftCamera.quaternion.copy(camera.quaternion);
                         rightCamera.quaternion.copy(camera.quaternion);
@@ -1210,7 +1553,6 @@
                     rightRenderer.render(rightScene, rightCamera);
                 }
             } else {
-                // الوضع العادي
                 if (isGyroEnabled && deviceOrientationControls) {
                     deviceOrientationControls.update();
                 }
@@ -1223,13 +1565,6 @@
                 }
             }
         }
-
-        // إيقاف الجايروسكوب
-        function disableGyro() {
-            isGyroEnabled = false;
-            if (controls3D) controls3D.enabled = true;
-            deviceOrientationControls = null;
-        }
         
         // تهيئة الفيديو
         videoPlayer.addEventListener('loadedmetadata', function() {
@@ -1238,14 +1573,10 @@
             timeDisplayAdv.textContent = `00:00 / ${formatTime(videoPlayer.duration)}`;
             initThreeJS();
             
-            // إعداد شريط التقدم
             setupProgressBar();
-            
-            // إصلاح زر VR
-            fixVRButton();
-            
-            // إعداد الجيروسكوب
+            setupQualitySystem();
             setupGyroscope();
+            loadSettings();
         });
 
         videoPlayer.addEventListener('waiting', function() {
@@ -1302,6 +1633,7 @@
             videoPlayer.volume = percent;
             volumeLevel.style.width = `${percent * 100}%`;
             updateVolumeIcon(percent);
+            saveSettings();
         }
 
         volumeBtn.addEventListener('click', toggleMute);
@@ -1312,10 +1644,11 @@
                 volumeLevel.style.width = '0%';
                 volumeBtn.innerHTML = '<i class="fas fa-volume-mute"></i>';
             } else {
-                videoPlayer.volume = 1;
-                volumeLevel.style.width = '100%';
+                videoPlayer.volume = volumeLevelValue;
+                volumeLevel.style.width = `${volumeLevelValue * 100}%`;
                 volumeBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
             }
+            saveSettings();
         }
 
         function updateVolumeIcon(volume) {
@@ -1361,10 +1694,8 @@
 
         function toggleVRMode() {
             if (!isVRMode) {
-                // تفعيل وضع VR
                 enableVRMode();
             } else {
-                // إلغاء وضع VR
                 disableVRMode();
             }
         }
@@ -1376,9 +1707,9 @@
             
             initVRMode();
             
-            // إخفاء التعليمات في وضع VR
             instructions.style.display = 'none';
             controls.style.display = 'none';
+            advancedToggle.style.display = 'none';
         }
 
         function disableVRMode() {
@@ -1386,22 +1717,19 @@
             modeIndicator.innerHTML = '<i class="fas fa-vr-cardboard"></i><span>وضع العرض: عادي</span>';
             vrButton.innerHTML = '<i class="fas fa-vr-cardboard"></i> وضع VR';
             
-            // إعادة تهيئة الوضع العادي
             while(canvasContainer.firstChild) {
                 canvasContainer.removeChild(canvasContainer.firstChild);
             }
             
             initThreeJS();
             
-            // إخفاء VR overlay
             vrOverlay.style.display = 'none';
             vrControls.style.display = 'none';
             
-            // إظهار التعليمات والتحكم
             instructions.style.display = 'block';
             controls.style.display = 'block';
+            advancedToggle.style.display = 'flex';
             
-            // إيقاف الجايروسكوب
             disableGyro();
         }
 
@@ -1413,7 +1741,6 @@
                 controls3D.reset();
             }
             if (deviceOrientationControls && isGyroEnabled) {
-                // إعادة ضبط الجايروسكوب
                 deviceOrientationControls.reset();
             }
         }
@@ -1438,6 +1765,7 @@
             videoPlayer.loop = !videoPlayer.loop;
             loopBtn.classList.toggle('active');
             loopBtn.textContent = videoPlayer.loop ? 'ON' : 'OFF';
+            localStorage.setItem('videoLoop', videoPlayer.loop);
         });
 
         // المسافة بين العينين
@@ -1447,6 +1775,7 @@
             if (isVRMode) {
                 applyVREffects();
             }
+            saveSettings();
         });
 
         // حجم الإطار
@@ -1456,6 +1785,7 @@
             if (isVRMode) {
                 applyVREffects();
             }
+            saveSettings();
         });
 
         // مقياس العرض
@@ -1465,6 +1795,7 @@
             if (isVRMode) {
                 applyVREffects();
             }
+            saveSettings();
         });
 
         // عكس الصورة
@@ -1473,6 +1804,7 @@
             invertBtn.classList.toggle('active');
             invertBtn.textContent = isInverted ? 'ON' : 'OFF';
             applyVREffects();
+            saveSettings();
         });
 
         // التحكم بالوقت
@@ -1489,6 +1821,7 @@
             playbackRate = parseFloat(this.value);
             videoPlayer.playbackRate = playbackRate;
             speedValue.textContent = `${playbackRate.toFixed(2)}x`;
+            saveSettings();
         });
 
         // مستوى الصوت
@@ -1498,6 +1831,7 @@
             audioLevelValue.textContent = `${level}%`;
             volumeLevel.style.width = `${level}%`;
             updateVolumeIcon(level / 100);
+            saveSettings();
         });
 
         // إعادة الضبط
@@ -1508,6 +1842,8 @@
             scaleFactor = 1.0;
             isInverted = false;
             playbackRate = 1.0;
+            currentQuality = "auto";
+            isAutoQuality = true;
             
             ipdSlider.value = eyeDistance;
             ipdValue.textContent = eyeDistance.toFixed(1);
@@ -1527,25 +1863,34 @@
             videoPlayer.playbackRate = playbackRate;
             videoPlayer.currentTime = 0;
             
+            qualitySelector.value = 'auto';
+            updateQualityUI();
+            
             if (isVRMode) {
                 applyVREffects();
             }
             
             document.body.style.filter = 'none';
+            
+            // مسح localStorage
+            localStorage.clear();
+            saveSettings();
         });
 
         // إعادة ضبط الحجم عند تغيير حجم النافذة
         window.addEventListener('resize', function() {
             if (isVRMode) {
-                // إعادة ضبط وضع VR
                 applyVREffects();
             } else {
-                // إعادة ضبط الوضع العادي
                 if (camera && renderer) {
                     camera.aspect = window.innerWidth / window.innerHeight;
                     camera.updateProjectionMatrix();
                     renderer.setSize(window.innerWidth, window.innerHeight);
                 }
+            }
+            
+            if (isAutoQuality) {
+                adjustQualityBasedOnNetwork();
             }
         });
 
